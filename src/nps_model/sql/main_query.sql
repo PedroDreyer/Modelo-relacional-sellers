@@ -1,0 +1,102 @@
+-- ==========================================
+-- Query principal para obtener datos de NPS Relacional Sellers (MP)
+-- ==========================================
+-- Fuente: SBOX_CX_BI_ADS_CORE.BT_NPS_TX_SELLERS_MP_DETAIL
+-- Parámetros esperados (sustituir antes de ejecutar):
+-- - {sites}: lista de sites como ('MLA', 'MLB', etc.)
+-- - {fecha_minima}: fecha mínima en formato 'YYYY-MM-DD'
+-- - {fecha_maxima}: fecha máxima en formato 'YYYY-MM-DD'
+
+SELECT 
+    -- Identificadores
+    NPS_TX_SIT_SITE_ID AS SITE,
+    CAST(NPS_TX_END_DATE AS TIMESTAMP) AS END_DATE,
+    EXTRACT(YEAR FROM NPS_TX_END_DATE) AS YEAR,
+    EXTRACT(QUARTER FROM NPS_TX_END_DATE) AS QUARTER,
+    FORMAT_DATE("%Y%m", NPS_TX_END_DATE) AS END_DATE_MONTH,
+    EXTRACT(WEEK FROM NPS_TX_END_DATE) AS WEEK,
+    CAST(NPS_TX_QUALTRICS_RESPONSE_ID AS STRING) AS SURVEY_ID,
+    NPS_TX_CUS_CUST_ID AS CUST_ID,
+    NPS_TX_CUS_CUST_ID AS SELLER_ID,
+    
+    -- NPS
+    NPS_TX_NOTA_NPS AS NOTA_NPS,
+    CASE
+        WHEN NPS_TX_NOTA_NPS IS NULL THEN NULL
+        WHEN NPS_TX_NOTA_NPS IN (9, 10) THEN 1
+        WHEN NPS_TX_NOTA_NPS IN (7, 8) THEN 0
+        WHEN NPS_TX_NOTA_NPS IN (0, 1, 2, 3, 4, 5, 6) THEN -1
+    END AS NPS,
+    
+    -- Motivos originales (se usan directo, sin reclasificar)
+    NPS_TX_MPROM AS PROMOTION_REASON_NPS,
+    NPS_TX_MNEUTRO AS NEUTRAL_REASON_NPS,
+    NPS_TX_MDET AS DETRACTION_REASON_NPS,
+    NPS_TX_COMMENT AS COMMENTS,
+    
+    -- MOTIVO unificado (tomado directo del campo correspondiente según NPS)
+    CASE
+        WHEN NPS_TX_NOTA_NPS IN (9, 10) THEN COALESCE(NPS_TX_MPROM, 'Sin información')
+        WHEN NPS_TX_NOTA_NPS IN (7, 8) THEN COALESCE(NPS_TX_MNEUTRO, 'Sin información')
+        WHEN NPS_TX_NOTA_NPS IN (0, 1, 2, 3, 4, 5, 6) THEN COALESCE(NPS_TX_MDET, 'Sin información')
+        ELSE 'Sin información'
+    END AS MOTIVO,
+    
+    -- Segmentación de Sellers
+    SEGMENTO_TAMANO_SELLER,
+    SEGMENTO_CROSSMP,
+    POINT_DEVICE_TYPE,
+    
+    -- Device Point: modelo y canal
+    MODELO_DEVICE,
+    NPS_TX_DEVICE_DECLARADO AS DEVICE_DECLARADO,
+    NPS_POINT_ADQ_CHANNEL AS CANAL_ADQUISICION,
+
+    -- Problemas de funcionamiento
+    NPS_TX_PROBLEMA_FUNCIONAMIENTO AS PROBLEMA_FUNCIONAMIENTO,
+    NPS_TX_PROBLEMA_BLOQUEANTE AS PROBLEMA_BLOQUEANTE,
+    NPS_TX_TIPO_PROBLEMA_FUNCIONAMIENTO AS TIPO_PROBLEMA,
+
+    -- Valoraciones de device (solo aplica a Point)
+    NPS_TX_VALORAC_BLUETOOTH AS VALORAC_BLUETOOTH,
+    NPS_TX_VALORAC_CHIP AS VALORAC_CHIP,
+    NPS_TX_VALORAC_WIFI AS VALORAC_WIFI,
+    NPS_TX_VALORAC_MEDIO_PAGO AS VALORAC_MEDIO_PAGO,
+    NPS_TX_VALORAC_LECTURA AS VALORAC_LECTURA,
+    NPS_TX_VALORAC_PROCESAMIENTO AS VALORAC_PROCESAMIENTO,
+    NPS_TX_VALORAC_SEGURIDAD AS VALORAC_SEGURIDAD,
+    NPS_TX_VALORAC_BATERIA AS VALORAC_BATERIA,
+    NPS_TX_VALORAC_COMPROBANTES AS VALORAC_COMPROBANTES,
+    NPS_TX_VALORAC_CONECTIVIDAD AS VALORAC_CONECTIVIDAD,
+
+    -- Flags de uso de productos
+    POINT_USER,
+    QR_USER,
+    OP_USER,
+    FLAG_APICOW,
+    FLAG_PIX,
+    USO_PRODUCTOS,
+
+    -- FLAG_PIX_F calculado: OnlyTRF si USO_PRODUCTOS=UNICO y E_CODE contiene TRANSFERENCIAS
+    CASE
+        WHEN USO_PRODUCTOS = 'UNICO' AND NPS_TX_E_CODE LIKE '%TRANSFERENCIAS%' THEN 'OnlyTRF'
+        ELSE 'ST'
+    END AS FLAG_PIX_F,
+
+    -- Campos adicionales
+    NPS_TX_E_CODE AS E_CODE,
+    CAST(NULL AS STRING) AS PF_PJ,
+
+    -- PdF Point Tap (campos adicionales para análisis PdF)
+    PDF_POINT_TAP,
+    TIPO_PDF_POINT_TAP,
+    DEVICE_ID_AJUSTADO,
+    NPS_TX_QUALTRICS_SURVEY_ID AS QUALTRICS_SURVEY_ID
+
+FROM `meli-bi-data.SBOX_CX_BI_ADS_CORE.BT_NPS_TX_SELLERS_MP_DETAIL`
+
+WHERE NPS_TX_END_DATE >= '{fecha_minima}'
+    AND NPS_TX_END_DATE < '{fecha_maxima}'
+    AND NPS_TX_SIT_SITE_ID IN {sites}
+    AND NPS IS NOT NULL
+    {e_code_filter}

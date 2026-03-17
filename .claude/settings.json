@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -type f -name \"*\")",
+      "Bash(ls -la \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\")",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -type f)",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -type d)",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\src\" -name \"*.py\")",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -name \"*.sql\" -o -name \"*.json\")",
+      "Bash(grep -E \"\\\\.\\(sql|json\\)$\")",
+      "Bash(ls -lah \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\src\\\\nps_model\\\\report\\\\templates\")",
+      "Bash(wc -l \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\"/src/nps_model/**/*.py)",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\src\" -name \"*.py\" -exec wc -l {} +)",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\scripts\" -name \"*.py\" -exec wc -l {} +)",
+      "Bash(find \"c:/Users/pdreyer/Downloads/Modelo_NPS_Relacional_Sellers \\(1\\)\" -type f -name \"*.py\" -o -name \"*.sql\")",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -path \"*checkpoints*\" -name \"*.py\")",
+      "Bash(find \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\" -name \"gen_tab1_resumen.py\" -o -name \"checkpoint*.py\")",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python scripts/generar_html_final.py)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\pdreyer\\.claude\\projects\\c--Users-pdreyer-Downloads-Modelo-NPS-Relacional-Sellers--1-\\memory",
+      "c:\\Users\\pdreyer\\Downloads\\Modelo_NPS_Relacional_Sellers (1)\\.cache"
+    ]
+  }
+}

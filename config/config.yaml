@@ -1,0 +1,365 @@
+# ==========================================
+# CONFIGURACIÓN DEL MODELO NPS RELACIONAL SELLERS (MP)
+# ==========================================
+
+# ==========================================
+# PARÁMETROS DE CORRIDA
+# ==========================================
+
+# Países a analizar (lista de códigos SITE)
+# Cada site genera un resumen ejecutivo independiente
+# Opciones: MLA, MLB, MLM, MLC, MLU, MCO, MPE
+sites:
+  - MLB
+
+# Quarters a comparar (formato: YYQ[1-4])
+# El modelo carga datos para los meses de ambos quarters y compara QvsQ
+# Ejemplo: quarter_actual: "26Q1" y quarter_anterior: "25Q4"
+#          → carga Oct-Dic 2025 + Ene-Mar 2026, compara Q4 vs Q1
+quarter_actual: "26Q1"
+quarter_anterior: "25Q4"
+
+# Colores corporativos para motivos (NPS Relacional - Evolución de quejas)
+# Clave = texto a buscar en el nombre del motivo (minúsculas). Se usa la primera coincidencia.
+# _default = color para motivos no mapeados
+colores_motivos:
+  # Violeta claro — Atendimento ao cliente
+  atendimento ao cliente: "#CE93D8"
+  atención al cliente: "#CE93D8"
+  # Verde agua/teal — Empréstimo ou cartão de crédito
+  empréstimo ou cartão de crédito: "#26A69A"
+  crédito: "#26A69A"
+  credito: "#26A69A"
+  cartão de crédito: "#26A69A"
+  # Verde oscuro — Taxas e custos / comissões
+  taxas e custos: "#2E7D32"
+  taxas e comissões: "#2E7D32"
+  comissões por venda: "#2E7D32"
+  tasas: "#2E7D32"
+  comisiones: "#2E7D32"
+  # Rojo — Cobros / Pagamentos recusados
+  cobros recusados: "#E53935"
+  pagamentos recusados: "#E53935"
+  # Gris claro — Qualidade e funcionamento da maquininha
+  qualidade e funcionamento da maquininha: "#BDBDBD"
+  maquininha: "#BDBDBD"
+  # Amarillo — Falta de parcelamento sem juros
+  parcelamento sem juros: "#FDD835"
+  parceladas: "#FDD835"
+  # Verde claro/lima — Plazo de disponibilidad
+  plazo de disponibilidad: "#AED581"
+  prazo para disponibilização: "#AED581"
+  prazo: "#AED581"
+  # Rosa/salmón — Contracargos
+  contracargos: "#FF7043"
+  contestadas: "#FF7043"
+  # Azul navy — Problemas com as funcionalidades
+  problemas com as funcionalidades: "#1A237E"
+  problemas de funcionamiento: "#1A237E"
+  funcionalidades: "#1A237E"
+  # Púrpura — Inversiones
+  inversiones: "#7B1FA2"
+  investimentos: "#7B1FA2"
+  retornos: "#7B1FA2"
+  # Rosa claro — Servicios adicionales
+  servicios adicionales: "#F48FB1"
+  # Celeste — Seguridad
+  seguridad: "#4FC3F7"
+  segurança: "#4FC3F7"
+  # Gris claro — Cobro en cuotas / Parcelamento
+  cobro en cuotas: "#FFD54F"
+  cuotas: "#FFD54F"
+  # Naranja oscuro — Cobros rechazados / Pagamentos recusados
+  cobros rechazados: "#E64A19"
+  # Gris medio — Calidad dispositivo
+  calidad y funcionamiento: "#757575"
+  calidad del dispositivo: "#757575"
+  # Gris — Outros / default
+  outros motivos: "#9E9E9E"
+  otro: "#9E9E9E"
+  aprovação: "#9E9E9E"
+  aprobación: "#9E9E9E"
+  _default: "#9E9E9E"
+
+# ==========================================
+# FILTROS OPCIONALES
+# ==========================================
+# Estos filtros se aplican al análisis
+# Si no se especifican, se analizan todos los datos
+
+filtros:
+  # Filtro por segmento de seller (e_code)
+  # Opciones: SMB, LT
+  # Dejar vacío [] para analizar todos los segmentos
+  e_code: []
+  
+  # Filtro por tipo de persona (PF/PJ)
+  # Opciones: PF, PJ
+  # Dejar vacío [] para analizar todos
+  pf_pj: []
+  
+  # Filtro por producto MP
+  # Opciones: Point, QR, OP, etc.
+  # Dejar vacío [] para analizar todos los productos
+  producto: []
+  
+  # Fecha mínima para filtro de datos (opcional)
+  # Por defecto se calcula automáticamente (13 meses atrás)
+  # Formato: YYYY-MM-DD
+  fecha_minima: "2024-11-01"
+
+# ==========================================
+# ENRIQUECIMIENTO DE DATOS
+# ==========================================
+# Fuentes externas que se cruzan por CUST_ID con las encuestas NPS
+
+enriquecimiento:
+  # Créditos: FRED (TC & MC), calidad de oferta, upsells
+  cargar_credits: true
+
+  # Transacciones: TPV/TPN por producto, rangos de volumen
+  cargar_transacciones: false
+
+  # Inversiones: uso POTS, fondeo, cuenta remunerada
+  cargar_inversiones: true
+
+  # Top Off: atención al cliente (BT_CX_SELLERS_MP_TOP_OFF)
+  cargar_topoff: true
+
+  # Segmentación: producto principal, NEW_MAS_FLAG, segmento, PF/PJ
+  cargar_segmentacion: true
+
+  # Leer desde tablas del job Dataflow (NPS_AI_QUERIES_SELLERS) en vez de ejecutar queries
+  usar_tablas_dataflow: true
+  dataset_dataflow: "SBOX_NPS_ANALYTICS"
+
+# ==========================================
+# DEEP DIVE ENRIQUECIMIENTO (Acordeón por motivo)
+# ==========================================
+# Al abrir un motivo en "Detalle de quejas por motivo", dentro del acordeón se muestra
+# el bloque de enriquecimiento que corresponda. Se matchea por palabras clave en el
+# nombre del motivo; la primera coincidencia define la sección (datos de la query respectiva).
+# dimension_key = clave en checkpoint1.dimensiones (datos que vienen del enriquecimiento/job)
+# titulo = título de la sección en el HTML
+# sin_datos_mensaje = texto si no hay datos para esa dimensión (opcional)
+# placeholder = si no hay dimension_key, se muestra solo este texto (ej. Atención por incorporar)
+
+deep_dive_enriquecimiento:
+  - patrones: ["credito", "credit", "empresti", "cartao", "fred"]
+    dimension_key: "CREDIT_GROUP"
+    titulo: "Apertura FRED Credits"
+    sin_datos_mensaje: "Falta tabla Dataflow: CREDITS_SELLERS o datos no disponibles para este período."
+  - patrones: ["invest", "poupan", "cofrin", "invers"]
+    dimension_key: "FLAG_USA_INVERSIONES"
+    titulo: "Datos Inversiones"
+  - patrones: ["tax", "comis", "pric", "tasas", "tarifa"]
+    dimension_key: "RANGO_TPV"
+    titulo: "Pricing / Escalas"
+    sin_datos_mensaje: "Ver dimensión Rangos TPV/TPN en Apertura por producto."
+  - patrones: ["atend", "atencion", "top off", "cliente"]
+    dimension_key: "FLAG_TOPOFF"
+    titulo: "Atención al cliente / Top Off"
+
+# ==========================================
+# UPDATE (VISTA DE ANÁLISIS)
+# ==========================================
+# Filtra la vista del análisis por tipo de update
+# Opciones: Point, SMBs, OP, all
+
+update:
+  tipo: "LINK"
+
+# ==========================================
+# ANÁLISIS POR DIMENSIONES
+# ==========================================
+
+# Dimensiones adicionales para análisis de shares y variaciones
+# Las dimensiones habilitadas generan secciones en el resumen ejecutivo
+dimensiones:
+  # --- Dimensiones base (de la encuesta) ---
+  analizar_segmento_tamano: true
+  analizar_segmento_crossmp: true
+  analizar_point_device_type: true
+  analizar_pf_pj: true
+  analizar_e_code: false
+  
+  # --- Dimensiones de segmentación enriquecida ---
+  analizar_producto_principal: true
+  analizar_newbie_legacy: true
+  analizar_region: false
+  
+  # --- Dimensiones de transacciones ---
+  analizar_rango_tpv: true
+  analizar_rango_tpn: true
+  
+  # --- Dimensiones de créditos ---
+  analizar_uso_credito: true
+  analizar_tarjeta_credito: true
+  analizar_estado_oferta_credito: true
+  analizar_credit_group: true
+  
+  # --- Dimensiones de inversiones ---
+  analizar_uso_inversiones: true
+  analizar_pots_activo: true
+  analizar_inversiones_flag: true
+  analizar_asset_flag: true
+  analizar_winner_flag: true
+  
+  # --- Dimensiones de segmentación adicionales ---
+  analizar_only_transfer: true
+
+  # --- Dimensiones de aprobación de pagos (OP only) ---
+  analizar_tasa_aprobacion: true
+
+  # --- Dimensiones de atención al cliente ---
+  analizar_topoff: true
+
+  # --- Dimensiones de device / problemas ---
+  analizar_modelo_device: true
+  analizar_problema_funcionamiento: true
+  analizar_tipo_problema: true
+
+# ==========================================
+# CONFIGURACIÓN DE ANÁLISIS CUALITATIVO
+# ==========================================
+
+# Análisis de causas raíz con IA (Gemini o GPT)
+analisis_cualitativo:
+  # Habilitar análisis con LLM
+  enabled: true
+  
+  # Número máximo de comentarios a analizar por motivo
+  max_comentarios_por_motivo: 200
+  
+  # Top N motivos para análisis detallado
+  top_n_motivos: 3
+  
+  # Proveedor de LLM: "gemini" o "openai"
+  llm_provider: "gemini"
+  
+  # Modelo a utilizar
+  # Gemini: "gemini-1.5-flash" o "gemini-1.5-pro"
+  # OpenAI: "gpt-4o-mini" o "gpt-4o"
+  model: "gemini-1.5-flash"
+
+# ==========================================
+# UMBRALES (CONFIGURABLES)
+# ==========================================
+
+umbrales:
+  # Variación mínima para considerar tendencia (en puntos porcentuales)
+  variacion_tendencia: 0.5
+  
+  # Variación mínima para considerar "significativa" en resumen
+  variacion_significativa: 0.5
+  
+  # Porcentaje mínimo para mostrar etiquetas en gráficos
+  etiqueta_grafico: 2.0
+
+  # --- Umbrales del motor de razonamiento (Bloques 1-4) ---
+  # ±pp para considerar NPS "sin cambio" (Bloque 1)
+  umbral_nps_estable: 1.0
+  # Motivos en dirección del NPS: si NPS baja, motivos que suben >= este valor (pp)
+  umbral_principal: 0.5
+  # Motivos opuestos / compensaciones (pp) — umbral más alto
+  umbral_compensacion: 0.9
+  # Para dimensión de enriquecimiento: movimiento >= este valor (pp en share o NPS)
+  umbral_driver_dim: 0.5
+  # Para efecto neto de producto en MIX (pp)
+  umbral_producto: 0.5
+  # Para variación de device Point (pp)
+  umbral_device: 1.0
+
+# ==========================================
+# CONFIGURACIÓN DE PERÍODOS HISTÓRICOS
+# ==========================================
+
+periodos:
+  # Meses de historia para gráfico de evolución de NPS
+  meses_evolucion_nps: 13
+  
+  # Meses para análisis de drivers y quejas
+  meses_analisis_drivers: 6
+
+# ==========================================
+# OUTPUTS
+# ==========================================
+
+outputs:
+  # Directorio de salida para reportes
+  output_dir: "outputs"
+  
+  # Generar PDF además de HTML
+  generate_pdf: false
+  
+  # Generar archivo JSON intermedio con datos estructurados
+  generate_json: true
+  
+  # Prefijo de nombres de archivos
+  # Los archivos se generan como: {prefix}_{SITE}_{fecha}.{ext}
+  file_prefix: "executive_summary"
+
+# ==========================================
+# CONFIGURACIÓN DE BIGQUERY
+# ==========================================
+
+bigquery:
+  # Project ID (se puede override con variable de entorno GOOGLE_CLOUD_PROJECT)
+  project_id: "meli-bi-data"
+
+# ==========================================
+# CONFIGURACIÓN DE LOGGING
+# ==========================================
+
+logging:
+  # Nivel de logging: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Guardar logs en archivo
+  save_to_file: false
+  
+  # Path del archivo de log (si save_to_file = true)
+  log_file: "nps_model.log"
+
+# ==========================================
+# MAPEO MOTIVO → DIMENSIÓN DE ENRIQUECIMIENTO
+# ==========================================
+# Usado por el motor de razonamiento (Bloque 3) para asociar cada motivo
+# de queja con la dimensión de enriquecimiento que lo valida.
+# Patrones se buscan en minúsculas dentro del nombre del motivo.
+# "dimension_key" es la columna del DataFrame enriquecido.
+# "descripcion" es el texto que aparece en la narrativa.
+# Si no hay dimensión mapeada, se usa fallback a causa raíz CP5.
+
+mapeo_motivo_dimension:
+  - patrones: ["tax", "comis", "tasas", "tarifa", "pric"]
+    dimension_key: "RANGO_TPV"
+    descripcion: "pricing por escalas de TPV"
+    # relacion_inversa: false (default) → mayor TPV = menores quejas por comisiones
+    # Nota: cuando exista query de pricing real, esto puede cambiar
+  - patrones: ["credito", "credit", "empresti", "cartao", "fred", "financ"]
+    dimension_key: "CREDIT_GROUP"
+    descripcion: "oferta/uso de créditos y TC"
+    relacion_inversa: true
+    # MENOS sellers con oferta → MÁS quejas por crédito
+    # MENOS sellers usando crédito → MÁS quejas
+  - patrones: ["invest", "poupan", "cofrin", "invers", "retorno"]
+    dimension_key: "FLAG_USA_INVERSIONES"
+    descripcion: "uso de inversiones (Pots/Turbinado)"
+    relacion_inversa: true
+    # MENOS sellers usando inversiones → MÁS quejas por inversiones
+  - patrones: ["rechaz", "recusado", "pagamentos recusados", "cobros rechaz"]
+    dimension_key: "RANGO_APROBACION"
+    descripcion: "tasa de aprobación de pagos"
+    relacion_inversa: true
+    # MENOR tasa de aprobación → MÁS quejas por cobros rechazados
+    fallback_cp5: true
+  - patrones: ["funcion", "qualidade", "maquininha", "device", "problem"]
+    dimension_key: "PROBLEMA_FUNCIONAMIENTO"
+    descripcion: "problemas de funcionamiento del device"
+    # relacion_inversa: false (default) → más problemas = más quejas (directo)
+  - patrones: ["atend", "atencion", "top off", "cliente"]
+    dimension_key: "FLAG_TOPOFF"
+    descripcion: "atención al cliente (Top Off)"
+    # relacion_inversa: false (default) → más contacto con atención = más quejas
+    fallback_cp5: true

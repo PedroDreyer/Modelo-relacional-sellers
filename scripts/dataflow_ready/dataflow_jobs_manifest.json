@@ -1,0 +1,26 @@
+{
+  "dataset": "SBOX_NPS_ANALYTICS",
+  "project": "meli-bi-data",
+  "jobs": [
+    {
+      "job_name": "NPS_AI_QUERY_SEGMENTACION",
+      "table_name": "SEGMENTATION_SELLERS",
+      "sql_file": "NPS_AI_QUERY_SEGMENTACION.sql"
+    },
+    {
+      "job_name": "NPS_AI_QUERY_TRANSACCIONES",
+      "table_name": "TRANSACCIONES_SELLERS",
+      "sql_file": "NPS_AI_QUERY_TRANSACCIONES.sql"
+    },
+    {
+      "job_name": "NPS_AI_QUERY_CREDITS",
+      "table_name": "CREDITS_SELLERS",
+      "sql_file": "NPS_AI_QUERY_CREDITS.sql"
+    },
+    {
+      "job_name": "NPS_AI_QUERY_REMUNERADA",
+      "table_name": "REMUNERADA_SELLERS",
+      "sql_file": "NPS_AI_QUERY_REMUNERADA.sql"
+    }
+  ]
+}

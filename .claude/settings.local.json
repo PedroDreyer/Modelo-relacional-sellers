@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(ls \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\data\"/checkpoint1_*)",
+      "Bash(ls \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\data\"/checkpoint3_*)",
+      "Bash(ls \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\data\"/checkpoint4_*)",
+      "Bash(ls \"c:\\\\Users\\\\pdreyer\\\\Downloads\\\\Modelo_NPS_Relacional_Sellers \\(1\\)\\\\data\"/checkpoint5_*)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python ejecutar_modelo_completo.py --recargar-datos)",
+      "Bash(ls data/*.pkl)",
+      "Bash(ls \"c:/Users/pdreyer/Downloads/Modelo_NPS_Relacional_Sellers \\(1\\)/data/\")",
+      "Bash(python3 -c \":*)",
+      "Bash(PYTHONPATH=src python -c \":*)",
+      "Bash(start \"\" \"outputs/NPSRelSellers_MLB_202603_20260311_114057.html\")",
+      "Bash(ls -t outputs/*.html)"
+    ]
+  }
+}

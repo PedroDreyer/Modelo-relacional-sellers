@@ -1,0 +1,187 @@
+-- ============================================
+-- Enrichment: Segmentación de Sellers
+-- Descripción: Producto principal, NEW_MAS_FLAG, segmento, PF/PJ, flags de producto
+-- Parametrizado por {sites}, {fecha_minima}, {fecha_maxima}
+-- Basado en segmentacion_sellers_futuro.sql
+-- ============================================
+
+-- MASTER: agrega TPN/TPV por seller + site + mes.
+-- CUST_SEGMENT_CROSS removido del GROUP BY para evitar
+-- multiplicar filas cuando un seller tiene múltiples segmentos.
+WITH MASTER AS (
+SELECT
+    CUS_CUST_ID,
+    SIT_SITE_ID,
+    CAST(FORMAT_DATE("%Y%m", TIM_DAY) AS INT64) AS TIM_MONTH,
+    MAX(TIM_DAY) AS MAX_PAY_DATE,
+    MIN(TIM_DAY) AS MIN_PAY_DATE,
+
+    ROUND(SUM(TPN_POINT),0) AS TPN_POINT,
+    ROUND(SUM(TPN_QR),0) AS TPN_QR,
+    ROUND(SUM(TPN_TRS),0) AS TPN_TRS,
+    ROUND(SUM(TPN_OP_LINK),0) AS TPN_LINK,
+    ROUND(SUM(TPN_OP_COW_API),0) AS TPN_API,
+
+    ROUND(SUM(TPV_POINT_DOL),0) AS TPV_POINT,
+    ROUND(SUM(TPV_QR_DOL),0) AS TPV_QR,
+    ROUND(SUM(TPV_OP_COW_API_DOL),0) AS TPV_API,
+    ROUND(SUM(TPV_OP_LINK_DOL),0) AS TPV_LINK
+
+FROM `meli-bi-data.WHOWNER.LK_MP_MASTER_SELLERS`
+WHERE 1=1
+    AND TIM_DAY >= DATE('{fecha_minima}')
+    AND TIM_DAY < DATE('{fecha_maxima}')
+    AND SIT_SITE_ID IN {sites}
+    -- Solo sellers que respondieron la encuesta NPS (evita OOM)
+    AND CUS_CUST_ID IN (
+        SELECT DISTINCT NPS_TX_CUS_CUST_ID
+        FROM `meli-bi-data.SBOX_CX_BI_ADS_CORE.BT_NPS_TX_SELLERS_MP_DETAIL`
+        WHERE NPS_TX_END_DATE >= '{fecha_minima}'
+            AND NPS_TX_END_DATE < '{fecha_maxima}'
+            AND NPS_TX_SIT_SITE_ID IN {sites}
+            AND NPS_TX_NOTA_NPS IS NOT NULL
+    )
+GROUP BY 1,2,3
+),
+
+SELLERS_TRANSACTIONS AS (
+SELECT
+    DISTINCT
+    t.CUS_CUST_ID,
+    SIT_SITE_ID,
+    TIM_MONTH,
+    TPN_POINT,
+    TPN_TRS,
+    TPN_QR,
+    TPN_LINK,
+    TPN_API,
+    TPV_POINT,
+    TPV_QR,
+    TPV_API,
+    TPV_LINK
+
+FROM MASTER t
+WHERE TPN_POINT > 0
+    OR TPN_TRS > 0
+    OR TPN_QR > 0
+    OR TPN_LINK > 0
+    OR TPN_API > 0
+),
+
+-- KYC deduplicado: garantiza 1 fila por CUS_CUST_ID antes del JOIN
+-- para evitar multiplicación de filas en SEGMENTATION_SELLERS.
+-- Ajustar el ORDER BY si la tabla tiene una columna de fecha/prioridad.
+KYC_DEDUP AS (
+SELECT
+    CUS_CUST_ID,
+    KYC_ENTITY_TYPE
+FROM `meli-bi-data.WHOWNER.LK_KYC_VAULT_USER`
+QUALIFY ROW_NUMBER() OVER(PARTITION BY CUS_CUST_ID ORDER BY CUS_CUST_ID) = 1
+),
+
+SEGMENTATION_SELLERS AS (
+SELECT
+    DISTINCT t.CUS_CUST_ID,
+    t.SIT_SITE_ID,
+    t.TIM_MONTH AS TIM_MONTH_TRANSACTION,
+
+    CASE WHEN TPN_POINT > 0 THEN 1 ELSE 0 END AS POINT_FLAG,
+    CASE WHEN TPN_TRS > 0 THEN 1 ELSE 0 END AS TRANSF_FLAG,
+    CASE WHEN TPN_QR > 0 THEN 1 ELSE 0 END AS QR_FLAG,
+    CASE WHEN TPN_LINK > 0 THEN 1 ELSE 0 END AS LINK_FLAG,
+    CASE WHEN TPN_API > 0 THEN 1 ELSE 0 END AS API_FLAG,
+    TPN_POINT,
+    TPN_TRS,
+    TPN_QR,
+    TPN_LINK,
+    TPN_API,
+    TPV_POINT,
+    TPV_QR,
+    TPV_API,
+    TPV_LINK,
+
+    s.CUST_SEGMENT_CROSS AS SEGMENTO,
+    s.CUST_SUB_SEGMENT_CROSS AS SUB_SEGMENTO,
+    s.CUST_TYPE AS TIPO_SELLER,
+    s.NEW_MAS_FLAG,
+    s.TIM_MONTH AS TIM_MONTH_SEGMENTATION,
+    CASE
+        WHEN s.CUST_PRODUCT_DETAIL = 'OP_COW_API' THEN 'APICOW'
+        WHEN s.CUST_PRODUCT_DETAIL = 'OP_LINK' THEN 'LINK'
+        ELSE s.CUST_PRODUCT_DETAIL
+    END AS PRODUCTO,
+
+    CASE
+        WHEN B.KYC_ENTITY_TYPE = 'person' THEN 'PF'
+        WHEN B.KYC_ENTITY_TYPE = 'company' THEN 'PJ'
+        ELSE NULL
+    END AS PERSON
+
+FROM SELLERS_TRANSACTIONS t
+INNER JOIN `meli-bi-data.WHOWNER.LK_MP_SEGMENTATION_SELLERS` s
+    ON t.CUS_CUST_ID = s.CUS_CUST_ID
+    AND t.TIM_MONTH >= s.TIM_MONTH
+    AND s.SELL_ACTIVE_MTD_FLAG = 1
+LEFT JOIN KYC_DEDUP B
+    ON B.CUS_CUST_ID = s.CUS_CUST_ID
+-- SIT_SITE_ID incluido en PARTITION BY para no perder sellers multi-site
+QUALIFY ROW_NUMBER() OVER(PARTITION BY t.CUS_CUST_ID, t.SIT_SITE_ID, t.TIM_MONTH ORDER BY s.TIM_MONTH DESC) = 1
+),
+
+STG_TRANSACCION AS (
+SELECT
+    s.*,
+    CASE WHEN POINT_FLAG + TRANSF_FLAG + QR_FLAG + LINK_FLAG + API_FLAG > 1
+        THEN 'COMPARTIDO' ELSE 'UNICO'
+    END AS USO_PRODUCTOS,
+    -- Igualdad exacta en lugar de LIKE para evitar falsos positivos
+    CASE
+        WHEN PRODUCTO = 'POINT'         AND POINT_FLAG = 1  THEN 'OK'
+        WHEN PRODUCTO = 'LINK'          AND LINK_FLAG = 1   THEN 'OK'
+        WHEN PRODUCTO = 'APICOW'        AND API_FLAG = 1    THEN 'OK'
+        WHEN PRODUCTO = 'QR'            AND QR_FLAG = 1     THEN 'OK'
+        WHEN PRODUCTO = 'TRANSFERENCIAS' AND TRANSF_FLAG = 1 THEN 'OK'
+        ELSE 'ERROR'
+    END AS CHECK_PRODUCTO,
+    CASE WHEN LINK_FLAG = 1 OR API_FLAG = 1
+        THEN 1 ELSE 0
+    END AS OP_FLAG
+
+FROM SEGMENTATION_SELLERS s
+WHERE
+    PERSON IN ('PF', 'PJ') AND
+    PRODUCTO IN ('POINT', 'QR', 'TRANSFERENCIAS', 'LINK', 'APICOW') AND
+    SEGMENTO NOT IN ('BIG SELLERS')
+)
+
+-- Final output: one row per CUST_ID + site + month with segmentation
+SELECT
+    t.CUS_CUST_ID,
+    t.SIT_SITE_ID,
+    CAST(t.TIM_MONTH_TRANSACTION AS STRING) AS TIM_MONTH_TRANSACTION,
+    t.POINT_FLAG,
+    t.TRANSF_FLAG,
+    t.QR_FLAG,
+    t.LINK_FLAG,
+    t.API_FLAG,
+    t.TPN_POINT,
+    t.TPN_TRS,
+    t.TPN_QR,
+    t.TPN_LINK,
+    t.TPN_API,
+    t.TPV_POINT,
+    t.TPV_QR,
+    t.TPV_API,
+    t.TPV_LINK,
+    t.SEGMENTO,
+    t.SUB_SEGMENTO,
+    t.TIPO_SELLER,
+    t.NEW_MAS_FLAG,
+    t.TIM_MONTH_SEGMENTATION,
+    t.PRODUCTO,
+    t.PERSON,
+    t.USO_PRODUCTOS,
+    t.CHECK_PRODUCTO,
+    t.OP_FLAG
+FROM STG_TRANSACCION t
+WHERE CHECK_PRODUCTO = 'OK'
