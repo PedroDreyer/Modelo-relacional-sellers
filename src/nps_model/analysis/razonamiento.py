@@ -368,6 +368,7 @@ def _bloque3_asociacion_drivers(
             relacion_inversa=relacion_inversa,
             share_primario=share_primario,
             dim_key_hint=dim_key,
+            all_dimensiones=dimensiones,
         )
 
         dims_usadas.add(dim_key)
@@ -428,6 +429,7 @@ def _clasificar_asociacion(
     relacion_inversa: bool = False,
     share_primario: bool = False,
     dim_key_hint: str = "",
+    all_dimensiones: dict | None = None,
 ) -> tuple[str, dict]:
     """Classify driver association and find the sub-group with most NPS movement.
 
@@ -553,6 +555,34 @@ def _clasificar_asociacion(
                 "total_active_share_var": _safe_round(total_active_share_act - total_active_share_ant),
             }
 
+    # FLAG_USA_INVERSIONES special: enrich with WINNER, ASSET, POTS breakdown
+    if dim_key_hint == "FLAG_USA_INVERSIONES" and all_dimensiones:
+        inv_breakdown = {}
+        for inv_dim in ["FLAG_WINNER", "FLAG_ASSET", "FLAG_POTS_ACTIVO"]:
+            inv_data = all_dimensiones.get(inv_dim, [])
+            for item in inv_data:
+                dim_name = str(item.get("dimension", ""))
+                # Look for the "positive" value (1, Winner, etc.)
+                if dim_name in ("1", "True", "true") or not dim_name.lower().startswith(("0", "no", "sin", "false")):
+                    nps_act = item.get("nps_q_actual")
+                    nps_ant = item.get("nps_q_anterior")
+                    shares = item.get("shares_por_mes", {})
+                    sh_act = shares.get(mes_actual)
+                    sh_ant = shares.get(mes_anterior)
+                    if nps_act is not None and nps_ant is not None:
+                        inv_breakdown[inv_dim] = {
+                            "label": dim_name,
+                            "nps_act": _safe_round(nps_act),
+                            "nps_ant": _safe_round(nps_ant),
+                            "nps_var": _safe_round(nps_act - nps_ant),
+                            "share_act": _safe_round(sh_act) if sh_act else None,
+                            "share_ant": _safe_round(sh_ant) if sh_ant else None,
+                            "share_var": _safe_round(sh_act - sh_ant) if (sh_act and sh_ant) else None,
+                        }
+                    break  # Only take the first positive match per dim
+        if inv_breakdown:
+            detalle["inversiones_breakdown"] = inv_breakdown
+
     motivo_moves = abs(var_motivo) >= umbral
 
     if share_primario:
@@ -652,6 +682,19 @@ def _generar_wording(
             dir_total = "creció" if total_var > 0 else "cayó"
             credit_detail = f" [Usuarios activos de crédito (grupos 3-5): share total {dir_total} {abs(total_var):.1f}pp. {'; '.join(parts)}]"
 
+    # Inversiones breakdown: WINNER, ASSET, POTS detail
+    ib = detalle.get("inversiones_breakdown", {})
+    inv_detail = ""
+    if ib:
+        parts = []
+        for inv_key, inv_label in [("FLAG_WINNER", "Winners"), ("FLAG_ASSET", "Cuenta Remunerada"), ("FLAG_POTS_ACTIVO", "Pots/Cofrinhos")]:
+            d = ib.get(inv_key)
+            if d and d.get("nps_var") is not None and abs(d["nps_var"]) >= 1:
+                share_info = f", {d['share_act']:.0f}%" if d.get("share_act") else ""
+                parts.append(f"{inv_label}: {d['nps_var']:+.0f}pp NPS{share_info}")
+        if parts:
+            inv_detail = f" [{'; '.join(parts)}]"
+
     is_share_primario = detalle.get("share_primario", False)
 
     if clasif == "EXPLICA_OK":
@@ -675,7 +718,7 @@ def _generar_wording(
 
             return (
                 f"{dir_motivo} de quejas de {motivo} ({var:+.1f}pp QvsQ): "
-                f"{nps_part}{share_part}{dd_suffix}{credit_detail}{voz_usuario}"
+                f"{nps_part}{share_part}{dd_suffix}{credit_detail}{inv_detail}{voz_usuario}"
             )
         # Fallback without rich data
         if inversa:

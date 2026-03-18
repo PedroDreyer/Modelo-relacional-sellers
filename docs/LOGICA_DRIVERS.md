@@ -92,20 +92,75 @@ porque MP les resuelve necesidades financieras de su negocio.
 
 ### 3. Inversiones (Investimentos e retornos)
 
-**Dimensión primaria:** FLAG_USA_INVERSIONES
-**Drill-down:** × SEGMENTO o × PRODUCTO_PRINCIPAL
+**Dimensiones:** FLAG_USA_INVERSIONES, FLAG_WINNER, FLAG_ASSET, FLAG_POTS_ACTIVO
+**Drill-down:** × SEGMENTO (SMB/Longtail) o × PRODUCTO_PRINCIPAL según update
 
-**Lógica:**
+#### Productos de inversión MP
+
+| Flag | Producto | Qué es |
+|------|---------|--------|
+| FLAG_USA_INVERSIONES | Cualquier inversión | Flag master: usa al menos 1 producto de inversión |
+| FLAG_ASSET | Cuenta Remunerada | El saldo en cuenta rinde automáticamente (sin acción del seller) |
+| FLAG_POTS_ACTIVO | Pots / Cofrinhos / Apartados / Reservas | Dinero apartado en una reserva que rinde. Mismo rendimiento que Asset pero separado del saldo disponible. Nombres por país: BR=Cofrinhos, MX=Apartados, AR=Reservas |
+| FLAG_WINNER | Winner (Cuenta Pro / Turbinada) | Seller que ganó el challenge de Cuenta Pro. Tiene rendimiento EXTRA en Asset y Pots (mejor tasa que el seller normal) |
+
+**Jerarquía:** WINNER > ASSET/POTS > No usa
+- WINNER implica que tiene Asset y/o Pots con rendimiento premium
+- ASSET y POTS son el mismo rendimiento, la diferencia es si el dinero está en saldo directo (Asset) o en una reserva separada (Pots)
+- FLAG_USA_INVERSIONES = 1 si tiene Asset O Pots O ambos
+
+**Principio fundamental:** Más sellers usando productos de inversión → mejor NPS,
+porque MP les genera valor adicional con su dinero. El rendimiento es un diferencial
+vs competidores que no ofrecen rendimiento automático del saldo.
+
+#### Lógica de razonamiento
+
+**Paso 1 — Chequear FLAG_USA_INVERSIONES (dimensión primaria):**
 - relacion_inversa = true
-- MENOS sellers usando inversiones → MÁS quejas por inversiones
-- El sub-grupo positivo es "Usa inversiones"
-- Si NPS de "Usa inversiones" cae → el producto no satisface
+- Si share de "Usa inversiones" SUBE → más sellers obtienen valor → debería mejorar NPS
+- Si share de "Usa inversiones" BAJA → menos sellers obtienen valor → posible aumento de quejas
+- Mirar NPS QvsQ de "Usa inversiones":
+  - Si NPS sube → el producto satisface
+  - Si NPS baja → el producto no satisface (puede ser por baja de tasa, experiencia pobre, etc.)
 
-**Qué buscar:**
-1. NPS de "Usa inversiones" vs "No usa" — gap y variación
-2. Share — ¿más o menos sellers usan inversiones?
-3. FLAG_WINNER (Rendimiento PLUS) como dimensión complementaria
-4. Voz: ¿mencionan rendimiento bajo, pérdida de dinero?
+**Paso 2 — Chequear FLAG_WINNER (dimensión clave):**
+- Winners tienen rendimiento premium → deberían tener NPS más alto
+- Si NPS de Winners cae → algo pasó con Cuenta Pro/Turbinada (baja de tasa, cambio de condiciones)
+- Si share de Winners cae → menos sellers acceden al programa premium
+- **FLAG_WINNER es la dimensión más sensible** porque estos sellers eligieron activamente participar en el challenge
+
+**Paso 3 — Chequear ASSET y POTS (complemento):**
+- FLAG_ASSET: ¿más o menos sellers tienen cuenta remunerada?
+- FLAG_POTS_ACTIVO: ¿más o menos sellers usan reservas/cofrinhos?
+- Si ambos caen → caída generalizada del producto de inversiones
+- Si uno sube y otro baja → migración entre productos (no necesariamente negativo)
+
+**Paso 4 — Drill-down (Nivel 2):**
+- Dentro de "Usa inversiones" o "Winner", cruzar con SEGMENTO o PRODUCTO_PRINCIPAL
+- Ejemplo: NPS de Winners cayó → ¿en SMBs o Longtail?
+
+**Paso 5 — Voz del seller (CP5):**
+- ¿Mencionan rendimiento bajo o pérdida de dinero?
+- ¿Comparan rendimiento con otros bancos?
+- ¿Motivos mal catalogados? (sellers que se quejan de tasas pero eligieron "inversiones")
+
+#### Cuándo se activa
+- Siempre que quejas por "Inversiones y rendimiento" varíen ≥ umbral_principal (±0.5pp)
+- Aplica a TODOS los updates (Point, SMBs, LINK, APICOW)
+
+#### Interpretación por escenario
+| Quejas inversiones | NPS "Usa inversiones" | Share "Usa inversiones" | NPS Winners | Interpretación |
+|---|---|---|---|---|
+| Suben ↑ | Baja ↓ | Estable | Baja ↓ | Producto deteriora: posible baja de tasa o cambio de condiciones |
+| Suben ↑ | Estable | Baja ↓ | Estable | Menos sellers acceden → frustración por exclusión |
+| Suben ↑ | Baja ↓ | Baja ↓ | Baja ↓ | Crisis del producto: peor experiencia + menos acceso |
+| Bajan ↓ | Sube ↑ | Sube ↑ | Sube ↑ | Mejora integral del ecosistema de inversiones |
+| Estable | Estable | Estable | Baja ↓ | Señal temprana: Winners insatisfechos, puede escalar |
+
+#### Ejemplo output
+> "aumento de quejas de Inversiones (+1.2pp): NPS de Winners pasó de 58 a 45 (-13pp,
+> 16% del total), principalmente en Longtail (-15pp NPS, 84% del segmento);
+> sellers reportan: rendimiento bajo comparado con otros bancos"
 
 ---
 
