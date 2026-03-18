@@ -46,8 +46,14 @@ def _prep_pdf_data(df: pd.DataFrame) -> pd.DataFrame:
 
     df_point = df[df["MODELO_DEVICE"].notna()].copy()
     pf_lower = df_point["PROBLEMA_FUNCIONAMIENTO"].astype(str).str.lower()
-    df_point = df_point[pf_lower.isin(["sim", "si", "não", "nao", "no", "1", "0", "true", "false", "yes"])].copy()
-    df_point["HAS_PROBLEM"] = df_point["PROBLEMA_FUNCIONAMIENTO"].astype(str).str.lower().isin(
+    # Normalize: strip accents for matching (sí→si, não→nao)
+    import unicodedata
+    def _strip_accents(s):
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    pf_norm = pf_lower.apply(_strip_accents)
+    df_point = df_point[pf_norm.isin(["sim", "si", "nao", "no", "1", "0", "true", "false", "yes"])].copy()
+    pf_norm_final = df_point["PROBLEMA_FUNCIONAMIENTO"].astype(str).str.lower().apply(_strip_accents)
+    df_point["HAS_PROBLEM"] = pf_norm_final.isin(
         ["sim", "si", "1", "true", "yes"]
     )
     return df_point
