@@ -270,9 +270,17 @@ def main():
     print(f"\n   ⏱️  Fase paralela completada en: {str(timedelta(seconds=int(tiempo_paralelo_total)))}")
     
     if cp5_failed:
-        print(f"\n   ⚠️  CP5 sin cache — HTML se generará sin análisis cualitativo")
-        print(f"   📋 Para completar Tab 4, Claude Code generará CP5 y re-ejecutará")
-    
+        # CP5 es OBLIGATORIO — no generar HTML incompleto
+        guardar_tiempos(data_dir, site, mes_actual, tiempos_actualizados)
+        print(f"\n   ⚠️  CP5 sin cache — NO se generará HTML (análisis cualitativo es obligatorio)")
+        print(f"   📋 Claude Code debe generar CP5 y re-ejecutar el modelo")
+        # Signal to caller that CP5 needs generation
+        prompt_path = data_dir / f"temp_prompt_claude_{site}_{mes_actual}.txt"
+        if prompt_path.exists():
+            print(f"\n⚠️  CP5_NEEDS_GENERATION: {prompt_path}")
+            print(f"🎯 Claude Code debe generar CP5 y re-ejecutar.")
+        sys.exit(5)
+
     # Check for other parallel failures (skip CP5 which is handled above)
     for script_path, nombre in scripts_paralelos:
         if "Checkpoint 5" in nombre:
@@ -286,8 +294,8 @@ def main():
                 print(output[-500:])
             print(f"{'='*80}")
             sys.exit(1)
-    
-    # FASE 3: HTML Final
+
+    # FASE 3: HTML Final (solo si CP5 existe)
     paso_num += 1
     exito, duracion = ejecutar_script(script_html[0], f"{paso_num}. {script_html[1]}")
     tiempos_ejecucion.append((script_html[1], duracion))

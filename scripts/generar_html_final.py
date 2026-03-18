@@ -119,6 +119,10 @@ if not checkpoint1:
 checkpoint3 = cargar_json_seguro(f"checkpoint3_tendencias_anomalias_{site}_{fecha_final}.json", "Checkpoint 3")
 checkpoint4 = cargar_json_seguro(f"checkpoint4_alertas_emergentes_{site}_{fecha_final}.json", "Checkpoint 4")
 causas_raiz_data = cargar_json_seguro(f"checkpoint5_causas_raiz_{site}_{fecha_final}.json", "CP5 causas raíz")
+if not causas_raiz_data:
+    print("   ❌ CP5 (análisis cualitativo) es OBLIGATORIO. No se generará HTML incompleto.")
+    print("   💡 Ejecutá el modelo completo para que Claude genere el CP5 primero.")
+    sys.exit(1)
 retagueo_data = cargar_json_seguro(f"checkpoint5_retagueo_{site}_{fecha_final}.json", "CP5 retagueo")
 comments_variaciones_data = cargar_json_seguro(f"checkpoint5_comments_variaciones_{site}_{fecha_final}.json", "CP5 comments")
 
@@ -392,6 +396,7 @@ tab4_html = generar_tab4(
     variaciones_quejas=variaciones_quejas,
     q_label_ant=q_label_ant,
     q_label_act=q_label_act,
+    razonamiento=razonamiento,
 )
 print("   ✅ Tab 4 (Cualitativo)")
 

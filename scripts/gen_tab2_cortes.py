@@ -55,6 +55,9 @@ def _build_unified_table(
     """Builds a unified Encuesta + Universo Total table for a dimension."""
     if not dim_list:
         return ""
+    # Skip dimensions with only 1 value (no comparison possible)
+    if len(dim_list) <= 1:
+        return ""
 
     h = f'<div class="mix-section"><h3>{dim_label}'
     h += ' <span class="dim-chip encuesta">ENCUESTA</span>'
@@ -222,13 +225,17 @@ MOTIVO_PATTERNS = {
 }
 
 CORTES_SIN_MOTIVO = [
-    ("PRODUCTO_PRINCIPAL", "Producto Principal", "LK_MP_MASTER_SELLERS"),
-    ("E_CODE", "Segmento (E_CODE)", ""),
-    ("PF_PJ", "PF / PJ", "LK_KYC_VAULT_USER"),
+    ("SEGMENTO_TAMANO_SELLER", "Segmento (SMB / Longtail)", ""),
     ("NEWBIE_LEGACY", "Newbie / Legacy", "LK_MP_SEGMENTATION_SELLERS"),
-    ("FLAG_ONLY_TRANSFER", "Flag Only Transfer", "LK_MP_SEGMENTATION_SELLERS"),
-    ("SEGMENTO_TAMANO_SELLER", "Segmento Tamaño", ""),
+    ("PF_PJ", "Persona (PF / PJ)", "LK_KYC_VAULT_USER"),
+    ("PRODUCTO_PRINCIPAL", "Producto Principal", "LK_MP_MASTER_SELLERS"),
+    ("POINT_DEVICE_TYPE", "Herramienta (Tap, Smart, POS, mPOS)", ""),
+    ("RANGO_TPV", "Rango TPV (USD)", "LK_MP_MASTER_SELLERS"),
+    ("RANGO_TPN", "Rango TPN (transacciones)", "LK_MP_MASTER_SELLERS"),
+    ("POINT_FLAG_LABEL", "Uso de Point (cross OP)", ""),
     ("SEGMENTO_CROSSMP", "Cross MP", ""),
+    ("E_CODE", "Segmento (E_CODE)", ""),
+    ("FLAG_ONLY_TRANSFER", "Flag Only Transfer", "LK_MP_SEGMENTATION_SELLERS"),
 ]
 
 
@@ -248,6 +255,14 @@ DIM_LABELS = {
     "TIPO_PROBLEMA": "Tipo de Problema",
     "FLAG_TOPOFF": "FLAG_TOPOFF",
     "RANGO_APROBACION": "Rango Aprobación",
+    "SEGMENTO_TAMANO_SELLER": "Segmento (SMB / Longtail)",
+    "NEWBIE_LEGACY": "Newbie / Legacy",
+    "PF_PJ": "Persona (PF / PJ)",
+    "PRODUCTO_PRINCIPAL": "Producto Principal",
+    "POINT_DEVICE_TYPE": "Herramienta",
+    "POINT_FLAG_LABEL": "Uso de Point",
+    "SEGMENTO_CROSSMP": "Cross MP",
+    "FLAG_ONLY_TRANSFER": "Only Transfer",
 }
 
 
@@ -373,14 +388,45 @@ def generar_tab2(
 
         html += "    </div>\n  </details>\n"
 
-    # ── Cortes sin motivo (sin header, solo tablas) ─────────────────
+    # ── Motivos sin dimension mapping — mostrar con voz del seller ──
+    for idx2, (motivo, var) in enumerate(motivos_sin_driver):
+        asocs = asoc_by_motivo.get(motivo, [])
+        # Skip if no association at all
+        if not asocs:
+            continue
+        bc = MOTIVO_COLORS[(len(motivos_con_driver) + idx2) % len(MOTIVO_COLORS)]
+        if var > 0.3:
+            badge = f'<span class="badge badge-up" style="font-size:12px;vertical-align:middle;margin-left:8px;">+{var:.1f}pp QvsQ</span>'
+        elif var < -0.3:
+            badge = f'<span class="badge badge-down" style="font-size:12px;vertical-align:middle;margin-left:8px;">{var:.1f}pp QvsQ</span>'
+        else:
+            badge = f'<span class="badge badge-stable" style="font-size:12px;vertical-align:middle;margin-left:8px;">{var:+.1f}pp</span>'
+
+        causa_preview = ""
+        if asocs[0].get("causa_raiz"):
+            causa_preview = f' — <span style="color:#666;font-weight:normal;font-size:13px;">{asocs[0]["causa_raiz"]}</span>'
+
+        html += f"""
+  <details class="section" style="border-left:4px solid {bc};">
+    <summary style="cursor:pointer;list-style:none;padding:12px 0;">
+      <div class="section-title" style="border-bottom:none;margin-bottom:0;display:inline;">{motivo} {badge}{causa_preview}</div>
+      <span style="float:right;color:#999;font-size:18px;">&#9660;</span>
+    </summary>
+    <div style="padding:8px 0 16px;">
+"""
+        for a in asocs:
+            html += _build_assoc_box(a)
+        html += "    </div>\n  </details>\n"
+
+    # ── Cortes específicos (acordeón por dimensión) ─────────────────
+    cortes_html = ""
     for dim_key, label, source in CORTES_SIN_MOTIVO:
         if dim_key in seen_dims or dim_key in dims_to_hide:
             continue
         dim_data = dimensiones_ch1.get(dim_key, [])
         if not dim_data:
             continue
-        # Skip dimensions where no item has NPS data for Q anterior or Q actual
+        # Skip dimensions where no item has NPS data
         has_any_nps = any(
             any(item.get("nps_por_mes", {}).get(m) is not None for m in meses_q_ant + meses_q_act)
             for item in dim_data
@@ -388,13 +434,7 @@ def generar_tab2(
         if not has_any_nps:
             continue
         has_real = bool(source)
-        html += '  <div class="section">\n'
-        html += f'    <div class="dim-group-header">{label}'
-        html += ' <span class="dim-chip encuesta">ENCUESTA</span>'
-        if has_real:
-            html += f' <span class="dim-chip real">{source}</span>'
-        html += "</div>\n"
-        html += _build_unified_table(
+        table_html = _build_unified_table(
             dim_data, label, q_label_ant, q_label_act,
             meses_q_ant, meses_q_act,
             has_real=has_real,
@@ -402,6 +442,27 @@ def generar_tab2(
             q_yoy=q_label_yoy,
             meses_q_yoy=meses_q_yoy,
         )
+        if not table_html:
+            continue
+        cortes_html += f"""
+    <details style="margin-bottom:8px;border:1px solid #e0e0e0;border-radius:8px;padding:0 14px;">
+      <summary style="cursor:pointer;list-style:none;padding:12px 0;font-weight:600;font-size:14px;color:#333;">
+        {label}
+        <span style="float:right;color:#999;font-size:16px;">&#9660;</span>
+      </summary>
+      <div style="padding:0 0 12px;">
+{table_html}
+      </div>
+    </details>
+"""
+
+    if cortes_html:
+        html += """
+  <div class="section">
+    <div class="section-title">Cortes Específicos</div>
+    <p class="text-sm text-muted" style="margin-bottom:8px;">NPS y share por dimensión de segmentación. Click para expandir.</p>
+"""
+        html += cortes_html
         html += "  </div>\n"
 
     return html

@@ -359,9 +359,11 @@ def _bloque3_asociacion_drivers(
                 continue
 
         relacion_inversa = dim_match.get("relacion_inversa", False)
+        share_primario = dim_match.get("share_primario", False)
         clasificacion, detalle = _clasificar_asociacion(
             var_share, dim_data, umbral_dim, mes_actual, desc,
             relacion_inversa=relacion_inversa,
+            share_primario=share_primario,
         )
 
         dims_usadas.add(dim_key)
@@ -402,6 +404,7 @@ def _clasificar_asociacion(
     mes_actual: str,
     desc: str,
     relacion_inversa: bool = False,
+    share_primario: bool = False,
 ) -> tuple[str, dict]:
     """Classify driver association and find the sub-group with most NPS movement.
 
@@ -500,13 +503,18 @@ def _clasificar_asociacion(
 
     motivo_moves = abs(var_motivo) >= umbral
 
-    # Use NPS QvsQ of sub-group for classification (more reliable than share MoM)
-    nps_var = best_nps_var if best_nps_item else 0
-    # dim_moves = either share moved OR NPS of sub-group moved significantly
-    dim_moves = abs(max_var) >= umbral or abs(nps_var) >= 2.0
+    if share_primario:
+        # For share_primario dimensions (e.g., Top Off): share variation IS the signal
+        # +share = better coverage, -share = worse coverage
+        detalle["share_primario"] = True
+        effective_var = max_share_var
+        dim_moves = abs(max_share_var) >= umbral
+    else:
+        # Default: use NPS QvsQ of sub-group (more reliable than share MoM)
+        nps_var = best_nps_var if best_nps_item else 0
+        dim_moves = abs(max_var) >= umbral or abs(nps_var) >= 2.0
+        effective_var = nps_var if abs(nps_var) >= 2.0 else max_var
 
-    # Direction: use NPS of sub-group (more meaningful than share)
-    effective_var = nps_var if abs(nps_var) >= 2.0 else max_var
     same_direction = (var_motivo > 0 and effective_var > 0) or (var_motivo < 0 and effective_var < 0)
     opposite_direction = (var_motivo > 0 and effective_var < 0) or (var_motivo < 0 and effective_var > 0)
 
@@ -569,9 +577,21 @@ def _generar_wording(
     share_ant_sg = detalle.get("share_subgrupo_ant")
     share_var_sg = detalle.get("share_subgrupo_var")
 
+    is_share_primario = detalle.get("share_primario", False)
+
     if clasif == "EXPLICA_OK":
+        if is_share_primario and share_ant_sg is not None and share_var_sg is not None:
+            # Share-primary dimensions (e.g., Top Off): lead with share, NPS secondary
+            dir_share = "creció" if share_var_sg > 0 else "cayó"
+            detail = f"share de {subgrupo} {dir_share} de {share_ant_sg:.0f}% a {share:.0f}% ({share_var_sg:+.1f}pp)"
+            if has_rich and abs(nps_var or 0) >= 1:
+                detail += f", NPS {nps_var:+.0f}pp"
+            return (
+                f"{dir_motivo} de quejas de {motivo} ({var:+.1f}pp QvsQ): "
+                f"{detail}{voz_usuario}"
+            )
         if has_rich and abs(nps_var or 0) >= 1:
-            # Build detail parts
+            # Default: NPS-primary with share as secondary
             nps_part = f"NPS de {subgrupo} pasó de {nps_ant:.0f} a {nps_act:.0f} ({nps_var:+.0f}pp)"
             share_part = ""
             if share_ant_sg is not None and share_var_sg is not None and abs(share_var_sg) >= 0.5:
@@ -782,13 +802,31 @@ def _generar_parrafo_quejas(bloque2: dict, bloque3: dict, direccion_nps: int, cp
                 nps_ant = det.get("nps_subgrupo_ant")
                 nps_act = det.get("nps_subgrupo_act")
                 share = det.get("share_subgrupo")
-                if nps_ant is not None and nps_act is not None and share is not None and abs(nps_act - nps_ant) >= 1:
+                share_ant = det.get("share_subgrupo_ant")
+                share_var = det.get("share_subgrupo_var")
+
+                # Share-primary (e.g., Top Off): lead with share
+                if det.get("share_primario") and share_ant is not None and share_var is not None:
+                    dir_sh = "creció" if share_var > 0 else "cayó"
+                    detail = f"share {subgrupo} {dir_sh} de {share_ant:.0f}% a {share:.0f}%"
+                    if nps_ant is not None and nps_act is not None and abs(nps_act - nps_ant) >= 1:
+                        detail += f", NPS {nps_act - nps_ant:+.0f}pp"
+                    txt += f" — {detail}"
+                elif nps_ant is not None and nps_act is not None and share is not None and abs(nps_act - nps_ant) >= 1:
                     nps_var = nps_act - nps_ant
-                    txt += (f" — {a.get('descripcion_dim', '')} "
-                            f"({nps_var:+.0f}pp NPS en {subgrupo}, "
-                            f"representan {share:.0f}% del total)")
+                    detail = f"{nps_var:+.0f}pp NPS en {subgrupo}"
+                    if share_ant is not None and share_var is not None and abs(share_var) >= 0.5:
+                        dir_sh = "creció" if share_var > 0 else "cayó"
+                        detail += f", share {dir_sh} de {share_ant:.0f}% a {share:.0f}%"
+                    else:
+                        detail += f", {share:.0f}% del total"
+                    txt += f" — {detail}"
                 else:
                     txt += f" — {a.get('descripcion_dim', '')}"
+                # Add CP5 voice as complement
+                causa = _get_causa_raiz_cp5(mot, cp5_data)
+                if causa:
+                    txt += f"; sellers reportan: <i>{causa}</i>"
                 return txt
 
         # 2. Buscar causa raíz de CP5 (análisis cualitativo)
@@ -830,16 +868,29 @@ def _generar_parrafo_quejas(bloque2: dict, bloque3: dict, direccion_nps: int, cp
 
 def _generar_parrafo_mix(bloque4: dict, bloque2: dict, direccion_nps: int) -> str:
     tablas = bloque4.get("tablas", {})
-    producto_rows = tablas.get("producto", [])
+    single_product = bloque4.get("single_product", False)
+    single_segment = bloque4.get("single_segment", False)
 
-    # Skip product mix when update already filters by single product (redundant)
-    if bloque4.get("single_product"):
+    # Determine which table to use for the mix paragraph
+    # For Point/LINK/APICOW (single_product): use segmento (SMB vs Longtail)
+    # For SMBs (single_segment): use producto
+    # For all: use producto
+    if single_product and not single_segment:
+        # Point, LINK, APICOW → use segmento as primary mix
+        mix_rows = tablas.get("segmento", [])
+        mix_label = "segmento"
+    else:
+        mix_rows = tablas.get("producto", [])
+        mix_label = "producto"
+
+    # Skip if the primary dimension is also filtered (redundant)
+    if single_product and single_segment:
         return ""
 
-    if not producto_rows:
+    if not mix_rows:
         return ""
 
-    top = producto_rows[0]
+    top = mix_rows[0]
     efecto_neto = top.get("efecto_neto")
     if efecto_neto is None or abs(efecto_neto) < 0.3:
         return ""
@@ -850,26 +901,34 @@ def _generar_parrafo_mix(bloque4: dict, bloque2: dict, direccion_nps: int) -> st
     var_share = top.get("var_share")
 
     dir_mix = "caída" if efecto_neto < 0 else "suba"
-    texto = (
-        f"El producto que más aportó a esta {dir_mix} fue {nombre} "
-        f"({efecto_neto:+.1f}pp): "
-        f"{e_mix:+.1f}pp por efecto mix"
-    )
+    if mix_label == "segmento":
+        texto = (
+            f"El segmento que más aportó a esta {dir_mix} fue {nombre} "
+            f"({efecto_neto:+.1f}pp): "
+            f"{e_mix:+.1f}pp por efecto mix"
+        )
+    else:
+        texto = (
+            f"El producto que más aportó a esta {dir_mix} fue {nombre} "
+            f"({efecto_neto:+.1f}pp): "
+            f"{e_mix:+.1f}pp por efecto mix"
+        )
     if var_share is not None and abs(var_share) >= 0.1:
         texto += f" (su share {'bajó' if var_share < 0 else 'subió'} {abs(var_share):.1f}pp)"
     texto += f" y {e_nps:+.1f}pp por efecto NPS"
 
-    # Point drill-down
-    point_devices = bloque4.get("point_devices", [])
-    if point_devices and "point" in nombre.lower():
-        top_dev = point_devices[0]
-        dev_name = top_dev.get("nombre", "")
-        dev_var = top_dev.get("var_nps") or 0
-        if abs(dev_var) >= 0.5:
-            texto += (
-                f" (se observa variación en dispositivos {dev_name} "
-                f"{dev_var:+.1f}pp)"
-            )
+    # Point drill-down (only for producto mix)
+    if mix_label == "producto":
+        point_devices = bloque4.get("point_devices", [])
+        if point_devices and "point" in nombre.lower():
+            top_dev = point_devices[0]
+            dev_name = top_dev.get("nombre", "")
+            dev_var = top_dev.get("var_nps") or 0
+            if abs(dev_var) >= 0.5:
+                texto += (
+                    f" (se observa variación en dispositivos {dev_name} "
+                    f"{dev_var:+.1f}pp)"
+                )
 
     texto += "."
     return texto

@@ -119,7 +119,7 @@ def preparar_comentarios_para_analisis(
             "neutros": comentarios_neutros
         }
         
-        if len(comentarios) >= 3:
+        if len(comentarios) >= 1:
             comentarios_por_motivo[motivo] = {
                 'total_disponibles': len(df_motivo),
                 'muestra_seleccionada': len(comentarios),

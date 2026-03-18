@@ -10,7 +10,7 @@
 # Cada site genera un resumen ejecutivo independiente
 # Opciones: MLA, MLB, MLM, MLC, MLU, MCO, MPE
 sites:
-  - MLB
+  - MLM
 
 # Quarters a comparar (formato: YYQ[1-4])
 # El modelo carga datos para los meses de ambos quarters y compara QvsQ
@@ -167,7 +167,7 @@ deep_dive_enriquecimiento:
 # Opciones: Point, SMBs, OP, all
 
 update:
-  tipo: "LINK"
+  tipo: "Point"
 
 # ==========================================
 # ANÁLISIS POR DIMENSIONES
@@ -360,6 +360,9 @@ mapeo_motivo_dimension:
     # relacion_inversa: false (default) → más problemas = más quejas (directo)
   - patrones: ["atend", "atencion", "top off", "cliente"]
     dimension_key: "FLAG_TOPOFF"
-    descripcion: "atención al cliente (Top Off)"
-    # relacion_inversa: false (default) → más contacto con atención = más quejas
+    descripcion: "cobertura Top Off (atención personalizada)"
+    share_primario: true
+    # Share es el driver: +share "Con Top Off" = mejor cobertura = menos quejas
+    # relacion_inversa: true → MÁS share Top Off = MENOS quejas por atención
+    relacion_inversa: true
     fallback_cp5: true

@@ -64,7 +64,7 @@ MOTIVO_CONSOLIDACION_PATRONES = [
     ("segurança da conta", "Falta de seguridad en la cuenta"),
     ("seguridad de la cuenta", "Falta de seguridad en la cuenta"),
     # --- Inversiones ---
-    ("investimentos e retornos baixos", "Inversiones y rendimiento de dinero en cuenta"),
+    ("investimentos e retornos", "Inversiones y rendimiento de dinero en cuenta"),
     ("inversiones y rendimiento", "Inversiones y rendimiento de dinero en cuenta"),
     # --- Plazo de disponibilidad ---
     ("prazo para disponibilização", "Plazo de disponibilidad del dinero"),
@@ -76,6 +76,8 @@ MOTIVO_CONSOLIDACION_PATRONES = [
     ("problemas de funcionamiento", "Problemas con las funcionalidades de la cuenta"),
     # --- Calidad device (Point-specific) ---
     ("qualidade e funcionamento da maquininha", "Calidad y funcionamiento del dispositivo"),
+    ("qualidade e dificuldade de uso da maquininha", "Calidad y funcionamiento del dispositivo"),
+    ("qualidade e facilidade de uso da maquininha", "Calidad y funcionamiento del dispositivo"),
     ("calidad y facilidad de uso del dispositivo", "Calidad y funcionamiento del dispositivo"),
     ("calidad y dificultad de uso del dispositivo", "Calidad y funcionamiento del dispositivo"),
     ("calidad del dispositivo", "Calidad y funcionamiento del dispositivo"),
@@ -89,6 +91,19 @@ MOTIVO_CONSOLIDACION_PATRONES = [
     # --- Integración ---
     ("dificuldade para integrar", "Otros"),
     ("dificultad para integrar", "Otros"),
+    # --- Funcionalidades de la cuenta ---
+    ("funcionalidades da conta", "Funcionalidades de la cuenta MP"),
+    ("funcionalidades de la cuenta", "Funcionalidades de la cuenta MP"),
+    # --- Medios de pago ---
+    ("meios de pagamento", "Medios de pago disponibles"),
+    ("medios de pagos disponibles", "Medios de pago disponibles"),
+    ("medios de pago disponibles", "Medios de pago disponibles"),
+    # --- Aprobación de pagos ---
+    ("aprovação de pagamentos", "Aprobación de pagos"),
+    ("aprobación de pagos", "Aprobación de pagos"),
+    # --- Cuotas sin interés ---
+    ("cuotas sin interés", "Cobro en cuotas"),
+    ("cuotas sin interes", "Cobro en cuotas"),
     # --- Otros ---
     ("outro - por favor", "Otros"),
     ("otro - por favor", "Otros"),
