@@ -167,24 +167,71 @@ vs competidores que no ofrecen rendimiento automático del saldo.
 ### 4. Atención al cliente (Atendimento ao cliente)
 
 **Dimensión primaria:** FLAG_TOPOFF
-**Tipo:** share_primario = true
+**Drill-down:** × SEGMENTO (SMB/Longtail) o × PRODUCTO_PRINCIPAL según update
 
-**Lógica:**
+#### Qué es Top Off
+
+Top Off es un programa de atención al cliente **especializada/personalizada** para sellers
+que califican (generalmente por volumen de ventas o antigüedad). Los sellers Con Top Off
+reciben atención prioritaria, agentes humanos dedicados, y resolución más rápida.
+
+| Valor | Significado |
+|-------|------------|
+| Con Top Off | Seller con atención personalizada/prioritaria |
+| Sin Top Off | Seller con atención estándar (chatbot, IA, cola general) |
+
+**Principio fundamental:** Más sellers con Top Off = mejor cobertura de atención
+personalizada = menos quejas por atención. Aplica a todos los sites y updates.
+
+#### Lógica de razonamiento
+
+**Paso 1 — Chequear SHARE de "Con Top Off" (señal primaria):**
+- share_primario = true → el SHARE es la métrica principal, no el NPS
 - relacion_inversa = true
-- share_primario = true → el SHARE es la señal, no el NPS
-- +share "Con Top Off" = mejor cobertura de atención personalizada = MENOS quejas
-- -share "Con Top Off" = menos cobertura = MÁS quejas
-- Top Off es un servicio de atención exclusiva para sellers calificados
+- Si share de "Con Top Off" SUBE → más sellers reciben atención personalizada → menos quejas
+- Si share de "Con Top Off" BAJA → menos cobertura → posible aumento de quejas
+- **El share refleja cuántos sellers tienen acceso al servicio premium**
 
-**Qué buscar:**
-1. Share de "Con Top Off" QvsQ — ¿creció o cayó la cobertura?
-2. NPS de "Con Top Off" vs "Sin Top Off" — gap de experiencia
-3. Drill-down: ¿en qué segmento/producto se concentra?
-4. Voz: ¿mencionan IA frustrante, falta de teléfono, bloqueos sin resolver?
+**Paso 2 — Chequear NPS de "Con Top Off" (señal complementaria):**
+- Aunque share sea la señal primaria, el NPS también importa:
+  - Si NPS de "Con Top Off" BAJA → la atención personalizada está fallando
+  - Si NPS de "Con Top Off" SUBE → la atención personalizada mejora
+- **Si suben quejas por atención Y el NPS de Con Top Off baja → algo está pasando
+  con la calidad del servicio premium, no solo con la cobertura**
 
-**Ejemplo output:**
+**Paso 3 — Comparar gap "Con Top Off" vs "Sin Top Off":**
+- Gap esperado: NPS "Con Top Off" > NPS "Sin Top Off" (Top Off agrega valor)
+- Si el gap se cierra → Top Off pierde diferencial
+- Si el gap se amplía → Top Off funciona pero los de atención estándar sufren más
+
+**Paso 4 — Drill-down (Nivel 2):**
+- Dentro de "Con Top Off", cruzar con SEGMENTO o PRODUCTO_PRINCIPAL
+- Ejemplo: NPS de Con Top Off cayó → ¿en SMBs o Longtail?
+
+**Paso 5 — Voz del seller (CP5):**
+- ¿Mencionan IA frustrante, imposibilidad de hablar con humano?
+- ¿Bloqueos de cuenta sin resolución?
+- ¿Retención de dinero sin respuesta?
+- ¿Comparación con Amazon/otros que sí tienen teléfono?
+
+#### Cuándo se activa
+- Siempre que quejas por "Atención al cliente" varíen ≥ umbral_principal (±0.5pp)
+- Aplica a TODOS los updates (Point, SMBs, LINK, APICOW)
+
+#### Interpretación por escenario
+| Quejas atención | Share "Con Top Off" | NPS "Con Top Off" | NPS "Sin Top Off" | Interpretación |
+|---|---|---|---|---|
+| Suben ↑ | Baja ↓ | Estable | Estable | Menos cobertura premium → más quejas |
+| Suben ↑ | Estable | Baja ↓ | Estable | Calidad de Top Off deteriora → el servicio premium falla |
+| Suben ↑ | Baja ↓ | Baja ↓ | Baja ↓ | Crisis: menos cobertura + peor calidad |
+| Bajan ↓ | Sube ↑ | Estable | Estable | Más cobertura reduce quejas |
+| Bajan ↓ | Estable | Sube ↑ | Estable | Mejora de calidad del servicio premium |
+| Suben ↑ | Estable | Estable | Baja ↓ | Atención estándar empeora (no es Top Off, es el canal general) |
+
+#### Ejemplo output
 > "mejora de quejas de Atención al cliente (-2.1pp): share de Con Top Off creció
-> de 63% a 65% (+2pp), NPS -6pp"
+> de 63% a 65% (+2pp), NPS -6pp, principalmente en Longtail (-8pp NPS, 85% del segmento);
+> sellers reportan: IA frustrante, falta de teléfono para atención"
 
 ---
 
