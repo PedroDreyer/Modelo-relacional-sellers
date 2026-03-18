@@ -244,7 +244,25 @@ def _chart_stacked_motivos_by_device(df_point: pd.DataFrame, device: str, meses_
             }},
           }},
         }},
-        plugins: [ChartDataLabels],
+        plugins: [ChartDataLabels, {{
+          id: 'stackedTotal_{device.replace(" ", "_")}',
+          afterDatasetsDraw(chart) {{
+            const ctx = chart.ctx;
+            const lastMeta = chart.getDatasetMeta(chart.data.datasets.length - 1);
+            if (!lastMeta || !lastMeta.data) return;
+            ctx.save();
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'center';
+            const totals = {json.dumps([t for t in totals])};
+            lastMeta.data.forEach((bar, i) => {{
+              if (totals[i] !== null) {{
+                ctx.fillText(totals[i] + '%', bar.x, bar.y - 6);
+              }}
+            }});
+            ctx.restore();
+          }}
+        }}],
       }});
     }})();
     </script>
