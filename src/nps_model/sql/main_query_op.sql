@@ -2,8 +2,9 @@
 -- Query principal para OP (LINK / APICOW)
 -- ==========================================
 -- Replica exactamente la query de referencia del Excel de OP.
--- Incluye join con BT_RES_RESTRICTIONS_SENTENCES y flag CONSIDERACION_AJUSTADA.
--- Filtro: NPS IS NOT NULL (no NPS_TX_NOTA_NPS).
+-- Incluye join directo con WHOWNER.BT_RES_RESTRICTIONS_SENTENCES y flag CONSIDERACION_AJUSTADA.
+-- No requiere tabla materializada RESTRICTIONS_SELLERS ni enrichment_restricciones.sql.
+-- Filtro: NPS_TX_NOTA_NPS IS NOT NULL.
 -- QUALIFY deduplica por response_id después del join de restricciones.
 -- Parámetros:
 --   {sites}, {fecha_minima}, {fecha_maxima}, {e_code_filter}
@@ -95,7 +96,7 @@ SELECT
         ELSE 'OTHER'
     END AS PRODUCTO_OP,
 
-    -- Restricciones
+    -- Restricciones (join directo con BT_RES_RESTRICTIONS_SENTENCES)
     MAX(RR.COLOR_DE_TARJETA) OVER (PARTITION BY NPS_TX_QUALTRICS_RESPONSE_ID) AS COLOR_DE_TARJETA,
     MAX(
         CASE WHEN RR.SENTENCE_ID IS NULL THEN 0 ELSE 1 END
@@ -105,7 +106,7 @@ SELECT
             WHEN RR.COLOR_DE_TARJETA IN ('2', '3')
                 AND (
                     RR.SENTENCE_REHABILITATION_DATE IS NULL
-                    OR SAFE.PARSE_DATE('%Y-%m-%d', RR.SENTENCE_REHABILITATION_DATE) >= r.NPS_TX_END_DATE
+                    OR RR.SENTENCE_REHABILITATION_DATE >= r.NPS_TX_END_DATE
                 )
             THEN 0
             ELSE 1
@@ -118,9 +119,9 @@ SELECT
 
 FROM `meli-bi-data.SBOX_CX_BI_ADS_CORE.BT_NPS_TX_SELLERS_MP_DETAIL` r
 
--- Usa tabla materializada (job Dataflow NPS_AI_QUERY_RESTRICTIONS) para foto fija de restricciones
-LEFT JOIN `meli-bi-data.SBOX_NPS_ANALYTICS.RESTRICTIONS_SELLERS` RR
-    ON RR.CUS_CUST_ID = r.NPS_TX_CUS_CUST_ID
+-- Join directo con tabla de restricciones (sin tabla materializada intermedia)
+LEFT JOIN `WHOWNER.BT_RES_RESTRICTIONS_SENTENCES` RR
+    ON RR.user_id = r.NPS_TX_CUS_CUST_ID
     AND r.NPS_TX_END_DATE >= RR.SENTENCE_DATE
     AND RR.SENTENCE_DATE >= DATE_SUB(r.NPS_TX_END_DATE, INTERVAL 6 MONTH)
 
@@ -128,7 +129,7 @@ WHERE 1=1
     AND r.NPS_TX_END_DATE >= '{fecha_minima}'
     AND r.NPS_TX_END_DATE < '{fecha_maxima}'
     AND r.NPS_TX_SIT_SITE_ID IN {sites}
-    AND r.NPS IS NOT NULL
+    AND r.NPS_TX_NOTA_NPS IS NOT NULL
     {e_code_filter}
 
 QUALIFY ROW_NUMBER() OVER (
