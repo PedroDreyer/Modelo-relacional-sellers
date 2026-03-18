@@ -109,10 +109,12 @@ def ejecutar_razonamiento(
     # ------------------------------------------------------------------
     # BLOQUE 3: Asociación con Drivers (enrichment)
     # ------------------------------------------------------------------
+    drill_down_data = checkpoint1_data.get("drill_down", {})
     bloque3 = _bloque3_asociacion_drivers(
         bloque2, dimensiones, checkpoint5_data,
         mapeo_config, UMBRAL_DRIVER_DIM, mes_actual,
         config=config,
+        drill_down=drill_down_data,
     )
 
     # ------------------------------------------------------------------
@@ -312,6 +314,7 @@ def _bloque3_asociacion_drivers(
     umbral_dim: float,
     mes_actual: str,
     config: dict | None = None,
+    drill_down: dict | None = None,
 ) -> dict:
     """For each relevant motivo, classify enrichment association."""
 
@@ -367,6 +370,24 @@ def _bloque3_asociacion_drivers(
         )
 
         dims_usadas.add(dim_key)
+
+        # Drill-down: if we found a best sub-group, check cross-dimension
+        if drill_down and dim_key in (drill_down or {}):
+            dd = drill_down[dim_key]
+            best_sg = detalle.get("subgrupo_name", "")
+            dd_items = dd.get("by_value", {}).get(str(best_sg), [])
+            if dd_items:
+                # Pick the cross-value with biggest NPS variation
+                top_dd = dd_items[0]  # already sorted by abs(nps_var)
+                if top_dd.get("nps_var") is not None and abs(top_dd["nps_var"]) >= 1:
+                    detalle["drill_down"] = {
+                        "cross_label": dd.get("cross_label", ""),
+                        "cross_value": top_dd["cross_value"],
+                        "nps_var": top_dd["nps_var"],
+                        "nps_act": top_dd["nps_q_actual"],
+                        "nps_ant": top_dd["nps_q_anterior"],
+                        "share": top_dd["share"],
+                    }
 
         # Always fetch CP5 causa raíz to enrich wording with user voice
         causa_raiz = _get_causa_raiz_cp5(motivo, checkpoint5_data)
@@ -577,21 +598,29 @@ def _generar_wording(
     share_ant_sg = detalle.get("share_subgrupo_ant")
     share_var_sg = detalle.get("share_subgrupo_var")
 
+    # Drill-down (Nivel 2): cross-dimension detail
+    dd = detalle.get("drill_down")
+    dd_suffix = ""
+    if dd:
+        dd_cv = dd.get("cross_value", "")
+        dd_var = dd.get("nps_var", 0)
+        dd_share = dd.get("share", 0)
+        dd_label = dd.get("cross_label", "")
+        dd_suffix = f", principalmente en {dd_cv} ({dd_var:+.0f}pp NPS, {dd_share:.0f}% del {dd_label})"
+
     is_share_primario = detalle.get("share_primario", False)
 
     if clasif == "EXPLICA_OK":
         if is_share_primario and share_ant_sg is not None and share_var_sg is not None:
-            # Share-primary dimensions (e.g., Top Off): lead with share, NPS secondary
             dir_share = "creció" if share_var_sg > 0 else "cayó"
             detail = f"share de {subgrupo} {dir_share} de {share_ant_sg:.0f}% a {share:.0f}% ({share_var_sg:+.1f}pp)"
             if has_rich and abs(nps_var or 0) >= 1:
                 detail += f", NPS {nps_var:+.0f}pp"
             return (
                 f"{dir_motivo} de quejas de {motivo} ({var:+.1f}pp QvsQ): "
-                f"{detail}{voz_usuario}"
+                f"{detail}{dd_suffix}{voz_usuario}"
             )
         if has_rich and abs(nps_var or 0) >= 1:
-            # Default: NPS-primary with share as secondary
             nps_part = f"NPS de {subgrupo} pasó de {nps_ant:.0f} a {nps_act:.0f} ({nps_var:+.0f}pp)"
             share_part = ""
             if share_ant_sg is not None and share_var_sg is not None and abs(share_var_sg) >= 0.5:
@@ -602,7 +631,7 @@ def _generar_wording(
 
             return (
                 f"{dir_motivo} de quejas de {motivo} ({var:+.1f}pp QvsQ): "
-                f"{nps_part}{share_part}{voz_usuario}"
+                f"{nps_part}{share_part}{dd_suffix}{voz_usuario}"
             )
         # Fallback without rich data
         if inversa:
@@ -823,6 +852,10 @@ def _generar_parrafo_quejas(bloque2: dict, bloque3: dict, direccion_nps: int, cp
                     txt += f" — {detail}"
                 else:
                     txt += f" — {a.get('descripcion_dim', '')}"
+                # Add drill-down (Nivel 2) if available
+                dd = det.get("drill_down")
+                if dd and dd.get("nps_var") is not None:
+                    txt += f", principalmente en {dd['cross_value']} ({dd['nps_var']:+.0f}pp NPS, {dd['share']:.0f}% del {dd.get('cross_label', 'total')})"
                 # Add CP5 voice as complement
                 causa = _get_causa_raiz_cp5(mot, cp5_data)
                 if causa:

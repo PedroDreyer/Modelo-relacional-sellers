@@ -277,6 +277,70 @@ def main():
             resultado_dimensiones[dim_key] = dim_completo
             print(f"      \u2705 {len(dim_completo)} valores analizados")
     
+    # 6b. Drill-down: cross-dimension NPS (Nivel 2)
+    drill_down_config = config.get('drill_down', {}).get(update_tipo, {})
+    cross_col = drill_down_config.get('cross_dimension')
+    cross_label = drill_down_config.get('cross_label', '')
+    drill_down_results = {}
+
+    if cross_col and cross_col in df_filtered.columns:
+        # For each dimension that has data, calculate NPS by (dim_value × cross_col)
+        mapeo_config = config.get('mapeo_motivo_dimension', [])
+        dims_to_drill = set()
+        for entry in mapeo_config:
+            dk = entry.get('dimension_key')
+            if dk and dk in resultado_dimensiones:
+                dims_to_drill.add(dk)
+
+        for dim_key in dims_to_drill:
+            dim_data = resultado_dimensiones[dim_key]
+            drill_for_dim = {}
+
+            for item in dim_data:
+                dim_val = item.get("dimension")
+                if dim_val is None:
+                    continue
+                # Filter to this dim value
+                df_sub = df_filtered[df_filtered[dim_key] == dim_val].dropna(subset=[cross_col])
+                if len(df_sub) < 30:
+                    continue
+
+                cross_vals = df_sub[cross_col].unique()
+                cross_items = []
+                for cv in cross_vals:
+                    df_cv_q_act = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_act))]
+                    df_cv_q_ant = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_ant))]
+                    n_act = len(df_cv_q_act)
+                    n_ant = len(df_cv_q_ant)
+                    if n_act < 10:
+                        continue
+                    nps_act = round(df_cv_q_act["NPS"].mean() * 100, 1)
+                    nps_ant = round(df_cv_q_ant["NPS"].mean() * 100, 1) if n_ant >= 10 else None
+                    share_act = round(n_act / len(df_sub[df_sub["END_DATE_MONTH"].isin(meses_q_act)]) * 100, 1)
+                    cross_items.append({
+                        "cross_value": str(cv),
+                        "nps_q_actual": nps_act,
+                        "nps_q_anterior": nps_ant,
+                        "nps_var": round(nps_act - nps_ant, 1) if nps_ant is not None else None,
+                        "share": share_act,
+                        "n": n_act,
+                    })
+
+                if cross_items:
+                    # Sort by absolute NPS variation (biggest mover first)
+                    cross_items.sort(key=lambda x: abs(x.get("nps_var") or 0), reverse=True)
+                    drill_for_dim[str(dim_val)] = cross_items
+
+            if drill_for_dim:
+                drill_down_results[dim_key] = {
+                    "cross_dimension": cross_col,
+                    "cross_label": cross_label,
+                    "by_value": drill_for_dim,
+                }
+
+        if drill_down_results:
+            print(f"\n   📊 Drill-down calculado: {list(drill_down_results.keys())} × {cross_col}")
+
     # 7. Mostrar resultados
     print("\n" + "="*80)
     print("RESULTADOS: SHARES DE MOTIVOS NPS SELLERS")
@@ -311,7 +375,8 @@ def main():
         "update_tipo": update_tipo,
         "meses_disponibles": meses_para_analisis,
         "drivers": resultado,
-        "dimensiones": resultado_dimensiones if resultado_dimensiones else {}
+        "dimensiones": resultado_dimensiones if resultado_dimensiones else {},
+        "drill_down": drill_down_results if drill_down_results else {}
     }
     
     import numpy as np

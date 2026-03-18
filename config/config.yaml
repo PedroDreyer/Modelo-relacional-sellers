@@ -10,7 +10,7 @@
 # Cada site genera un resumen ejecutivo independiente
 # Opciones: MLA, MLB, MLM, MLC, MLU, MCO, MPE
 sites:
-  - MLM
+  - MLB
 
 # Quarters a comparar (formato: YYQ[1-4])
 # El modelo carga datos para los meses de ambos quarters y compara QvsQ
@@ -167,7 +167,7 @@ deep_dive_enriquecimiento:
 # Opciones: Point, SMBs, OP, all
 
 update:
-  tipo: "Point"
+  tipo: "SMBs"
 
 # ==========================================
 # ANÁLISIS POR DIMENSIONES
@@ -366,3 +366,30 @@ mapeo_motivo_dimension:
     # relacion_inversa: true → MÁS share Top Off = MENOS quejas por atención
     relacion_inversa: true
     fallback_cp5: true
+
+# ==========================================
+# DRILL-DOWN: CRUCES DE DIMENSIONES (Nivel 2)
+# ==========================================
+# Después de identificar el sub-grupo con más movimiento en la dimensión
+# primaria (Nivel 1), el motor profundiza cruzando con una segunda dimensión.
+# Ejemplo: CREDIT_GROUP (Nivel 1) detecta que grupo 5 cayó → cruza con
+# SEGMENTO_TAMANO_SELLER (Nivel 2) → descubre que la caída viene de SMBs.
+#
+# cross_dimension: columna del DataFrame para el drill-down
+# aplica_updates: lista de update_tipo donde aplica este cruce
+
+drill_down:
+  # Para Point/LINK/APICOW: profundizar por Segmento (SMB vs Longtail)
+  Point:
+    cross_dimension: "SEGMENTO"
+    cross_label: "segmento"
+  LINK:
+    cross_dimension: "SEGMENTO"
+    cross_label: "segmento"
+  APICOW:
+    cross_dimension: "SEGMENTO"
+    cross_label: "segmento"
+  # Para SMBs: profundizar por Producto Principal
+  SMBs:
+    cross_dimension: "PRODUCTO_PRINCIPAL"
+    cross_label: "producto"

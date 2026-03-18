@@ -268,7 +268,7 @@ new Chart(document.getElementById('chartQuejas'), {{
     }},
     scales:{{
       x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11,weight:'bold'}}}}}},
-      y:{{stacked:true,min:0,max:80,ticks:{{callback:v=>v+'%',stepSize:10,font:{{size:10}},color:'#999'}},grid:{{color:'#f5f5f5',drawBorder:false}}}}
+      y:{{stacked:true,min:0,max:50,ticks:{{callback:v=>v+'%',stepSize:5,font:{{size:10}},color:'#999'}},grid:{{color:'#f5f5f5',drawBorder:false}}}}
     }},
     elements:{{bar:{{borderWidth:0,borderRadius:0,borderSkipped:false}}}}
   }},
