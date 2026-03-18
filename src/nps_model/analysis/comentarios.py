@@ -162,11 +162,11 @@ Para cada motivo, debes:
 1. **Leer TODOS los comentarios** del motivo sin excepción
 2. **Identificar patrones semánticos profundos** — no solo palabras repetidas, sino problemas subyacentes, comparaciones con competencia, impacto en el negocio del seller, y drivers de churn
 3. **Agrupar por causa raíz** (mínimo 1, máximo 4 causas por motivo)
-4. **Generar título descriptivo y específico** — NO genérico. Mal: "Taxas altas". Bien: "Taxas de Link de Pagamento significativamente mas altas que competencia directa (C6, EFI, Nubank)"
-5. **Generar descripción profunda** (3-5 oraciones) que explique: el patrón identificado, por qué afecta al seller, qué evidencia hay en los comentarios, y qué implicancia tiene para el negocio (churn, migración, etc.)
+4. **Generar título descriptivo y específico** — NO genérico. Mal: "Taxas altas". Bien: "Taxas de Link de Pagamento significativamente mas altas que competencia directa (C6, EFI, Nubank)". NUNCA usar "Motivo mal catalogado" como título — siempre describir lo que los sellers realmente dicen.
+5. **Generar descripción profunda** (3-5 oraciones) que explique: el patrón identificado, por qué afecta al seller, qué evidencia hay en los comentarios, y qué implicancia tiene para el negocio (churn, migración, etc.). Si los comentarios no se refieren al motivo de la encuesta, mencionarlo en la descripción pero el título debe reflejar lo que dicen los sellers.
 6. **Calcular frecuencia** de cada causa (% y cantidad absoluta)
 7. **Seleccionar 2-3 ejemplos** representativos — elegir los más articulados, no los más cortos
-8. **Detectar motivos mal catalogados** — si sellers en "Otro" realmente se quejan de taxas, mencionarlo explícitamente
+8. **Detectar motivos mal catalogados** — si sellers en "Otro" realmente se quejan de taxas, mencionarlo en la descripción (no en el título)
 
 ## Formato de salida REQUERIDO
 

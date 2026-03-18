@@ -711,8 +711,18 @@ def _generar_wording(
             nps_part = f"NPS de {subgrupo} pasó de {nps_ant:.0f} a {nps_act:.0f} ({nps_var:+.0f}pp)"
             share_part = ""
             if share_ant_sg is not None and share_var_sg is not None and abs(share_var_sg) >= 0.5:
+                # Check if share moves opposite to the narrative (quejas direction)
+                # For relacion_inversa: quejas down + share down = contradictory share movement
+                share_contradicts = False
+                if inversa and share_var_sg is not None:
+                    # quejas down (var<0) but share of positive sub-group also down → "a pesar de"
+                    # quejas up (var>0) but share of positive sub-group also up → "a pesar de"
+                    share_contradicts = (var < 0 and share_var_sg < 0) or (var > 0 and share_var_sg > 0)
                 dir_share = "creció" if share_var_sg > 0 else "cayó"
-                share_part = f", participación {dir_share} de {share_ant_sg:.0f}% a {share:.0f}%"
+                if share_contradicts:
+                    share_part = f", a pesar de caída de {abs(share_var_sg):.0f}pp en share de {subgrupo}" if share_var_sg < 0 else f", a pesar de crecimiento de {share_var_sg:.0f}pp en share"
+                else:
+                    share_part = f", participación {dir_share} de {share_ant_sg:.0f}% a {share:.0f}%"
             elif share is not None:
                 share_part = f" ({share:.0f}% del total)"
 
@@ -932,8 +942,14 @@ def _generar_parrafo_quejas(bloque2: dict, bloque3: dict, direccion_nps: int, cp
                     nps_var = nps_act - nps_ant
                     detail = f"{nps_var:+.0f}pp NPS en {subgrupo}"
                     if share_ant is not None and share_var is not None and abs(share_var) >= 0.5:
-                        dir_sh = "creció" if share_var > 0 else "cayó"
-                        detail += f", share {dir_sh} de {share_ant:.0f}% a {share:.0f}%"
+                        # Check if share contradicts for relacion_inversa
+                        is_inversa = det.get("relacion_inversa", False)
+                        share_contradicts = is_inversa and ((var < 0 and share_var < 0) or (var > 0 and share_var > 0))
+                        if share_contradicts:
+                            detail += f", a pesar de caída de {abs(share_var):.0f}pp en share" if share_var < 0 else f", a pesar de suba de {share_var:.0f}pp en share"
+                        else:
+                            dir_sh = "creció" if share_var > 0 else "cayó"
+                            detail += f", share {dir_sh} de {share_ant:.0f}% a {share:.0f}%"
                     else:
                         detail += f", {share:.0f}% del total"
                     txt += f" — {detail}"
@@ -1082,16 +1098,33 @@ def _generar_parrafo_resumen(
     if parrafo_mix:
         texto += parrafo_mix
 
-    # Check Newbie/Legacy mix shift as additional factor
-    newbie_items = bloque4.get("tablas", {}).get("newbie_legacy", [])
-    if newbie_items:
-        for item in newbie_items:
-            if item.get("nombre", "").lower() in ("newbie", "newbies"):
-                var_share = item.get("var_share")
-                efecto_mix = item.get("efecto_mix")
-                if var_share is not None and abs(var_share) >= 2:
-                    dir_n = "más" if var_share > 0 else "menos"
-                    texto += f" Se observa {dir_n} newbies en el mix ({var_share:+.1f}pp share)."
+    # Additional mix observations (separate paragraph)
+    mix_observations = []
+
+    # Check segmento/producto mix (the one NOT used in the main mix paragraph)
+    tablas = bloque4.get("tablas", {})
+    # If main mix used segmento, check producto and vice versa
+    for table_name, label in [("segmento", "segmento"), ("producto", "producto"), ("persona", "persona")]:
+        items = tablas.get(table_name, [])
+        for item in items:
+            efecto_neto = item.get("efecto_neto")
+            var_sh = item.get("var_share")
+            nombre = item.get("nombre", "")
+            if efecto_neto is not None and abs(efecto_neto) >= 1.0 and var_sh is not None and abs(var_sh) >= 2:
+                dir_sh = "creció" if var_sh > 0 else "cayó"
+                mix_observations.append(f"{nombre} {dir_sh} {abs(var_sh):.0f}pp share ({efecto_neto:+.1f}pp efecto neto)")
+
+    # Check Newbie/Legacy mix shift
+    newbie_items = tablas.get("newbie_legacy", [])
+    for item in newbie_items:
+        if item.get("nombre", "").lower() in ("newbie", "newbies"):
+            var_share = item.get("var_share")
+            if var_share is not None and abs(var_share) >= 2:
+                dir_n = "más" if var_share > 0 else "menos"
+                mix_observations.append(f"{dir_n} newbies ({var_share:+.1f}pp share)")
+
+    if mix_observations:
+        texto += " Se observa en el mix: " + "; ".join(mix_observations[:3]) + "."
 
     return texto.strip()
 
