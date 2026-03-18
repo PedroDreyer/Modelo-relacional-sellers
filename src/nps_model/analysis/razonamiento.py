@@ -367,6 +367,7 @@ def _bloque3_asociacion_drivers(
             var_share, dim_data, umbral_dim, mes_actual, desc,
             relacion_inversa=relacion_inversa,
             share_primario=share_primario,
+            dim_key_hint=dim_key,
         )
 
         dims_usadas.add(dim_key)
@@ -426,6 +427,7 @@ def _clasificar_asociacion(
     desc: str,
     relacion_inversa: bool = False,
     share_primario: bool = False,
+    dim_key_hint: str = "",
 ) -> tuple[str, dict]:
     """Classify driver association and find the sub-group with most NPS movement.
 
@@ -522,6 +524,35 @@ def _clasificar_asociacion(
             detalle["share_subgrupo_var"] = _safe_round(best["share_var"])
             detalle["aporte_pp"] = _safe_round(best["nps_var"] * best["share_act"] / 100)
 
+    # CREDIT_GROUP special: enrich detalle with active groups (3-5) breakdown
+    if dim_key_hint == "CREDIT_GROUP":
+        active_groups = []
+        total_active_share_act = 0
+        total_active_share_ant = 0
+        for c in candidates:
+            dim_name = str(c.get("dimension", ""))
+            # Groups 3, 4, 5 are the "active" credit users
+            if any(dim_name.startswith(p) for p in ("3.", "4.", "5.")):
+                sg = {
+                    "grupo": dim_name,
+                    "nps_act": _safe_round(c["nps_act"]) if c["nps_act"] is not None else None,
+                    "nps_ant": _safe_round(c["nps_ant"]) if c["nps_ant"] is not None else None,
+                    "nps_var": _safe_round(c["nps_var"]),
+                    "share_act": _safe_round(c["share_act"]) if c["share_act"] is not None else None,
+                    "share_var": _safe_round(c["share_var"]),
+                }
+                active_groups.append(sg)
+                if c["share_act"] is not None:
+                    total_active_share_act += c["share_act"]
+                    total_active_share_ant += (c["share_act"] - c["share_var"])
+        if active_groups:
+            detalle["credit_breakdown"] = {
+                "active_groups": active_groups,
+                "total_active_share_act": _safe_round(total_active_share_act),
+                "total_active_share_ant": _safe_round(total_active_share_ant),
+                "total_active_share_var": _safe_round(total_active_share_act - total_active_share_ant),
+            }
+
     motivo_moves = abs(var_motivo) >= umbral
 
     if share_primario:
@@ -608,6 +639,19 @@ def _generar_wording(
         dd_label = dd.get("cross_label", "")
         dd_suffix = f", principalmente en {dd_cv} ({dd_var:+.0f}pp NPS, {dd_share:.0f}% del {dd_label})"
 
+    # Credit breakdown: summarize active groups (3-5) movement
+    cb = detalle.get("credit_breakdown")
+    credit_detail = ""
+    if cb and cb.get("active_groups"):
+        parts = []
+        for ag in cb["active_groups"]:
+            if ag.get("nps_var") is not None and abs(ag["nps_var"]) >= 1 and ag.get("share_act"):
+                parts.append(f"{ag['grupo']}: {ag['nps_var']:+.0f}pp NPS ({ag['share_act']:.0f}%)")
+        if parts:
+            total_var = cb.get("total_active_share_var", 0)
+            dir_total = "creció" if total_var > 0 else "cayó"
+            credit_detail = f" [Usuarios activos de crédito (grupos 3-5): share total {dir_total} {abs(total_var):.1f}pp. {'; '.join(parts)}]"
+
     is_share_primario = detalle.get("share_primario", False)
 
     if clasif == "EXPLICA_OK":
@@ -631,7 +675,7 @@ def _generar_wording(
 
             return (
                 f"{dir_motivo} de quejas de {motivo} ({var:+.1f}pp QvsQ): "
-                f"{nps_part}{share_part}{dd_suffix}{voz_usuario}"
+                f"{nps_part}{share_part}{dd_suffix}{credit_detail}{voz_usuario}"
             )
         # Fallback without rich data
         if inversa:

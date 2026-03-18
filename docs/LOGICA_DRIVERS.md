@@ -7,23 +7,65 @@ validar con datos reales si el movimiento en quejas tiene correlato operacional.
 
 ### 1. Crédito (Empréstimo ou cartão de crédito)
 
-**Dimensión primaria:** CREDIT_GROUP (FRED - 5 grupos)
+**Dimensiones:** CREDIT_GROUP (FRED), FLAG_USA_CREDITO, FLAG_TARJETA_CREDITO
 **Drill-down:** × SEGMENTO (SMB/Longtail) o × PRODUCTO_PRINCIPAL según update
 
-**Lógica:**
+#### Grupos FRED (CREDIT_GROUP)
+| Grupo | Significado | Nivel de uso |
+|-------|------------|-------------|
+| 1. Sem uso e sem linha | Sin crédito, sin línea disponible | Ninguno |
+| 2. Sem uso e com alguma linha | Tiene línea pero no la usa | Bajo |
+| 3. Apenas uso de CC | Usa Crédito Corriente (préstamo) | Medio |
+| 4. Apenas uso de TC | Usa Tarjeta de Crédito MP | Medio |
+| 5. Uso de CC e TC | Usa ambos productos | Alto |
+
+**Principio fundamental:** A mayor grupo FRED (1→5), mayor uso del ecosistema de
+créditos de MP. Sellers que usan más productos crediticios tienden a tener mejor NPS
+porque MP les resuelve necesidades financieras de su negocio.
+
+#### Lógica de razonamiento
+
+**Paso 1 — Chequear CREDIT_GROUP (dimensión primaria):**
 - relacion_inversa = true
-- MENOS sellers con oferta/uso de crédito → MÁS quejas por crédito
-- El sub-grupo relevante es el "positivo" (grupo 5: Uso de CC e TC)
-- Si NPS del grupo 5 cae → confirma que la insatisfacción crediticia impacta NPS
-- Si share del grupo 5 cae → menos sellers acceden al producto, más quejas
+- Si share de grupos 3-5 (usuarios activos) SUBE → debería mejorar NPS
+- Si share de grupos 3-5 BAJA → menos acceso/uso → posible aumento de quejas
+- Mirar NPS QvsQ de CADA grupo (no solo el "mejor"):
+  - Grupo 5 (CC+TC): ¿sube o baja? Es el más relevante por volumen de uso
+  - Grupo 3 (solo CC): ¿cómo viene el préstamo?
+  - Grupo 4 (solo TC): ¿cómo viene la tarjeta?
+  - Grupos 1-2 (sin uso): NPS bajo es esperado, no es señal de alarma
 
-**Qué buscar:**
-1. NPS QvsQ del grupo 5 (CC+TC) — es el grupo con mejor perfil crediticio
-2. Share del grupo 5 vs Q anterior — ¿más o menos sellers tienen acceso?
-3. Drill-down: ¿en qué segmento/producto se concentra la variación?
-4. Voz del seller (CP5): ¿mencionan falta de TC, juros altos, límites reducidos?
+**Paso 2 — Chequear FLAGS binarios (complemento):**
+- FLAG_USA_CREDITO: "Usa crédito" vs "No usa crédito"
+  - Si NPS de "Usa crédito" cae → el producto crediticio no satisface
+  - Si share de "Usa crédito" cae → menos sellers acceden a crédito
+- FLAG_TARJETA_CREDITO: "Tiene TC MP" vs "Sin TC MP"
+  - Misma lógica: NPS y share del grupo que tiene TC
 
-**Ejemplo output:**
+**Paso 3 — Drill-down (Nivel 2):**
+- Dentro del grupo FRED que más varía, cruzar con SEGMENTO o PRODUCTO_PRINCIPAL
+- Ejemplo: grupo 5 cayó -9pp NPS → ¿en SMBs o Longtail? → SMBs (-12pp, 14% del seg)
+
+**Paso 4 — Voz del seller (CP5):**
+- ¿Mencionan falta de acceso a TC pese a años de lealtad?
+- ¿Juros extorsivos en préstamos?
+- ¿Reducción arbitraria de límites post-pago?
+- ¿Migración declarada a competidores (PagBank, InfinitePay, Banco do Brasil)?
+
+#### Cuándo se activa
+- Siempre que quejas por "Crédito" varíen ≥ umbral_principal (±0.5pp)
+- Aplica a TODOS los updates (Point, SMBs, LINK, APICOW)
+
+#### Interpretación por escenario
+| Quejas crédito | NPS grupo 5 | Share grupos 3-5 | Interpretación |
+|---|---|---|---|
+| Suben ↑ | Baja ↓ | Estable | Producto crediticio deteriora experiencia |
+| Suben ↑ | Estable | Baja ↓ | Menos sellers acceden → frustración por falta de acceso |
+| Suben ↑ | Baja ↓ | Baja ↓ | Doble efecto: peor producto + menos acceso |
+| Bajan ↓ | Sube ↑ | Sube ↑ | Mejora del ecosistema crediticio |
+| Bajan ↓ | Estable | Sube ↑ | Más acceso reduce frustración |
+
+#### Ejemplo output
 > "aumento de quejas de Crédito (+7pp): NPS de 5. Uso de CC e TC pasó de 63 a 54 (-9pp),
 > principalmente en SMB (-12pp NPS, 14% del segmento); sellers reportan: falta de acceso a TC"
 
