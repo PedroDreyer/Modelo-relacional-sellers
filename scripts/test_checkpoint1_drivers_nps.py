@@ -212,11 +212,31 @@ def main():
 
     print(f"   Dimensiones habilitadas: {len(dimensiones_sellers)}")
     
+    # Fallback: if SEGMENTO_TAMANO_SELLER is empty (e.g., after hilo/lolo exclusion in Point),
+    # use SEGMENTO from enrichment instead
+    DIMENSION_FALLBACKS = {
+        "SEGMENTO_TAMANO_SELLER": "SEGMENTO",
+    }
+
     for col_name, dim_key in dimensiones_sellers:
+        # Check fallback if column is empty or missing
+        actual_col = col_name
+        if col_name in DIMENSION_FALLBACKS:
+            if col_name not in df_filtered.columns or df_filtered[col_name].dropna().nunique() == 0:
+                fallback = DIMENSION_FALLBACKS[col_name]
+                if fallback in df_filtered.columns and df_filtered[fallback].dropna().nunique() > 0:
+                    actual_col = fallback
+                    print(f"\n   🔄 Fallback: {col_name} vacío, usando {fallback}")
+        col_name = actual_col
+
         if col_name not in df_filtered.columns:
             print(f"\n   \u26a0\ufe0f  Dimension {col_name} no disponible en datos")
             continue
-        
+
+        if df_filtered[col_name].dropna().nunique() == 0:
+            print(f"\n   \u26a0\ufe0f  Dimension {col_name} sin valores válidos")
+            continue
+
         print(f"\n   Analizando dimension: {col_name}")
         
         df_nps_dim = calcular_nps_total(
