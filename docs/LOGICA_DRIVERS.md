@@ -258,22 +258,70 @@ personalizada = menos quejas por atención. Aplica a todos los sites y updates.
 
 ### 6. Calidad y funcionamiento del dispositivo (Point-specific)
 
-**Dimensión primaria:** PROBLEMA_FUNCIONAMIENTO (Sí/No)
-**Drill-down:** × SEGMENTO
+**Dimensiones:** PROBLEMA_FUNCIONAMIENTO, TIPO_PROBLEMA, MODELO_DEVICE
+**Drill-down:** TIPO_PROBLEMA × MODELO_DEVICE (¿qué problema en qué device?)
 
-**Lógica:**
-- relacion_inversa = false
-- MÁS sellers con problemas de funcionamiento → MÁS quejas
-- Sub-dimensión: TIPO_PROBLEMA (Bluetooth, Chip, WiFi, Congelamiento, Batería, etc.)
-- MODELO_DEVICE para cruzar con tipo de hardware
+#### Dimensiones disponibles
 
-**Qué buscar:**
-1. % PdF (Problemas de Funcionamiento) QvsQ por device type (mPOS, Smart, POS, Tap)
-2. Motivos top de PdF — ¿Bluetooth? ¿Congelamiento? ¿Rechazos?
-3. NPS de sellers con PdF vs sin PdF — gap de experiencia
-4. Voz: ¿mencionan travamento, reposición negada, chip que no funciona?
+| Columna | Qué mide | Valores |
+|---------|---------|---------|
+| PROBLEMA_FUNCIONAMIENTO | ¿Tuvo problema en últimos 30 días? | Sí / No |
+| TIPO_PROBLEMA | Tipo de problema reportado | Bluetooth, Chip, WiFi, Congelamiento, Batería, Rechazos, Procesamiento lento, Errores de cobro, Otro |
+| MODELO_DEVICE | Tipo de hardware | mPOS, Smart, POS, Tap (Otro) |
 
-**Nota:** Solo aplica para update Point. Tab 3 (PdF) tiene los charts dedicados.
+**Principio fundamental:** Más sellers con problemas de funcionamiento = más quejas
+por calidad del dispositivo. La pregunta clave es: ¿qué tipo de problema crece y en
+qué device se concentra?
+
+#### Lógica de razonamiento
+
+**Paso 1 — Chequear PROBLEMA_FUNCIONAMIENTO (dimensión primaria):**
+- relacion_inversa = false (directa: más problemas = más quejas)
+- Si % de "Sí" SUBE → más sellers reportan problemas → quejas suben
+- Si % de "Sí" BAJA → menos problemas → quejas bajan
+- Mirar NPS de "Sí" vs "No" — gap esperado: NPS "Sí" << NPS "No"
+- Si el gap se amplía → los problemas impactan más en la experiencia
+
+**Paso 2 — Chequear TIPO_PROBLEMA (identificar qué problema crece):**
+- Mirar share de cada tipo de problema QvsQ
+- ¿Cuál creció más? ¿Bluetooth? ¿Congelamiento? ¿Rechazos?
+- Tipos de problema con mayor impacto en NPS:
+  - **Rechazos de cobro**: impacto directo en venta (seller pierde ingreso)
+  - **Congelamiento**: seller queda bloqueado frente al cliente
+  - **Bluetooth/WiFi/Chip**: conectividad, puede ser intermitente
+  - **Batería**: menos crítico pero molesto
+  - **Procesamiento lento**: afecta experiencia del comprador
+
+**Paso 3 — Chequear MODELO_DEVICE (identificar qué device tiene el problema):**
+- ¿El problema está concentrado en un device específico?
+- Ejemplo: "Congelamiento sube +3pp, concentrado en Smart" → problema de firmware/hardware de Smart
+- Si el problema es transversal (todos los devices) → problema sistémico
+- Si solo afecta un device → problema de ese hardware/modelo específico
+
+**Paso 4 — Voz del seller (CP5):**
+- ¿Mencionan travamento/congelamiento frecuente?
+- ¿MP no ofrece reposición y obliga a comprar nueva?
+- ¿Problemas con chip de operador (Claro, etc.)?
+- ¿Comparación con terminales de competencia que no traban?
+
+#### Cuándo se activa
+- Siempre que quejas por "Calidad y funcionamiento del dispositivo" varíen ≥ umbral_principal (±0.5pp)
+- **Solo aplica para update Point** (SMBs, LINK, APICOW no tienen device)
+- Tab 3 (PdF) tiene los charts dedicados con evolución por device × quarter
+
+#### Interpretación por escenario
+| Quejas calidad | % PdF "Sí" | Tipo problema top | Device afectado | Interpretación |
+|---|---|---|---|---|
+| Suben ↑ | Sube ↑ | Congelamiento ↑ | Smart | Problema de firmware Smart, posible lote defectuoso |
+| Suben ↑ | Sube ↑ | Rechazos ↑ | Todos | Problema sistémico de procesamiento de pagos |
+| Suben ↑ | Sube ↑ | Bluetooth ↑ | mPOS | Problema de conectividad BT en mPOS |
+| Suben ↑ | Estable | — | — | Percepción, no operacional (quizás por falta de reposición) |
+| Bajan ↓ | Baja ↓ | Congelamiento ↓ | Smart | Recupero post-actualización de firmware |
+
+#### Ejemplo output
+> "aumento de quejas de Calidad del dispositivo (+1.5pp): 21% de sellers reportan
+> problemas (vs 18% Q anterior), principalmente Congelamiento (+3pp en Smart, 60%
+> del total); sellers reportan: maquininha trava frecuentemente sin reposición"
 
 ---
 
