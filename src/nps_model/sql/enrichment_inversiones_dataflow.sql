@@ -8,11 +8,13 @@ SELECT
     r.TIM_MONTH,
     r.CUS_CUST_ID,
     r.SIT_SITE_ID,
-    r.FLAG_INVERSIONES,
-    r.FLAG_ASSET,
     r.FLAG_POTS_ACTIVO,
-    r.FLAG_WINNER,
-    r.FLAG_USA_INVERSIONES
+    r.FLAG_USA_INVERSIONES,
+    -- Derivar flags adicionales desde FLAG_USA_INVERSIONES y FLAG_POTS_ACTIVO
+    -- (la tabla dataflow no tiene el detalle por producto)
+    CASE WHEN r.FLAG_USA_INVERSIONES = 'Usa inversiones' THEN 1 ELSE 0 END AS FLAG_INVERSIONES,
+    CASE WHEN r.FLAG_USA_INVERSIONES = 'Usa inversiones' AND r.FLAG_POTS_ACTIVO = 0 THEN 1 ELSE 0 END AS FLAG_ASSET,
+    0 AS FLAG_WINNER
 FROM `meli-bi-data.SBOX_NPS_ANALYTICS.REMUNERADA_SELLERS` r
 WHERE CAST(r.TIM_MONTH AS INT64) >= {fecha_minima_month}
     AND CAST(r.TIM_MONTH AS INT64) <= {fecha_maxima_month}

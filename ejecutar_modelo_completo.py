@@ -70,6 +70,7 @@ def ejecutar_script(script_path: Path, nombre: str):
             check=True,
             cwd=str(script_path.parent.parent),
             env=env,
+            timeout=600,
         )
         
         tiempo_fin = time.time()
@@ -79,11 +80,16 @@ def ejecutar_script(script_path: Path, nombre: str):
         print(f"\n✅ Completado en: {duracion_str}")
         return True, duracion
         
+    except subprocess.TimeoutExpired:
+        duracion = time.time() - tiempo_inicio
+        print(f"\n❌ TIMEOUT en {nombre} (>600s)")
+        print(f"Tiempo: {str(timedelta(seconds=int(duracion)))}")
+        return False, duracion
     except subprocess.CalledProcessError as e:
         tiempo_fin = time.time()
         duracion = tiempo_fin - tiempo_inicio
         duracion_str = str(timedelta(seconds=int(duracion)))
-        
+
         print(f"\n❌ Error en {nombre}")
         print(f"Código de salida: {e.returncode}")
         print(f"Tiempo antes del error: {duracion_str}")

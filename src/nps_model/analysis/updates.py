@@ -206,7 +206,7 @@ def get_dimensiones_por_update(update_tipo: str) -> dict:
         'analizar_e_code': False,
         'analizar_producto_principal': True,
         'analizar_newbie_legacy': True,
-        'analizar_region': False,
+        'analizar_region': True,
         'analizar_rango_tpv': True,
         'analizar_rango_tpn': True,
         'analizar_uso_credito': True,
@@ -220,20 +220,19 @@ def get_dimensiones_por_update(update_tipo: str) -> dict:
         'analizar_winner_flag': True,
         'analizar_only_transfer': True,
         'analizar_topoff': True,
-        'analizar_tasa_aprobacion': False,  # Only for OP (LINK/APICOW)
+        'analizar_tasa_aprobacion': True,
+        'analizar_pricing': True,
+        'analizar_scale_level': True,
         'analizar_modelo_device': True,
         'analizar_problema_funcionamiento': True,
         'analizar_tipo_problema': True,
     }
 
     if update_tipo == "SMBs":
-        # SMB: cross producto principal, excluye Only Pix
+        # SMB: cross producto principal
         # Redundante: segmento_tamano (ya filtró SMBs)
         base['analizar_segmento_tamano'] = False
         base['analizar_point_device_type'] = False
-        base['analizar_modelo_device'] = False
-        base['analizar_problema_funcionamiento'] = False
-        base['analizar_tipo_problema'] = False
 
     elif update_tipo == "Point":
         # Point: cross segmento
@@ -250,7 +249,6 @@ def get_dimensiones_por_update(update_tipo: str) -> dict:
         base['analizar_problema_funcionamiento'] = False
         base['analizar_tipo_problema'] = False
         base['analizar_only_transfer'] = False
-        base['analizar_tasa_aprobacion'] = True  # Enable aprobacion for OP
 
     return base
 

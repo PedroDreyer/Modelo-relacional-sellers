@@ -42,8 +42,10 @@ with open(config_path, 'r', encoding='utf-8') as f:
 site = config['sites'][0]
 quarter_actual = config.get('quarter_actual', '26Q1')
 quarter_anterior = config.get('quarter_anterior', '25Q4')
-from nps_model.utils.dates import quarter_fecha_final, quarter_label
+from nps_model.utils.dates import quarter_fecha_final, quarter_label, quarter_to_months
 fecha_final = quarter_fecha_final(quarter_actual)
+meses_q_actual = quarter_to_months(quarter_actual)
+meses_q_anterior = quarter_to_months(quarter_anterior)
 
 print(f"   Site: {site}")
 print(f"   Comparación: {quarter_label(quarter_anterior)} vs {quarter_label(quarter_actual)}")
@@ -70,6 +72,8 @@ else:
 import pandas as pd
 from nps_model.analysis.comentarios import (
     preparar_comentarios_para_analisis,
+    preparar_comentarios_promotores,
+    generar_prompt_promotores,
     generar_prompt_para_claude,
     preparar_retagueo_otros,
     generar_prompt_retagueo,
@@ -108,27 +112,77 @@ def _load_nps_data(data_dir, site, fecha_final):
 # ==========================================
 update_tipo = config.get('update', {}).get('tipo', 'all')
 
+current_fecha_corte = config.get('fecha_corte', None)
+
 if checkpoint5_path and checkpoint5_path.exists():
-    # Validate update_tipo matches
+    # Validate update_tipo and fecha_corte match (same as CP1)
     cache_valid = True
     try:
         with open(checkpoint5_path, 'r', encoding='utf-8') as f:
             cached_data = json.load(f)
         cached_update = cached_data.get('update_tipo', cached_data.get('metadata', {}).get('update_tipo', 'unknown'))
+        cached_fecha_corte = cached_data.get('metadata', {}).get('fecha_corte', None)
         if cached_update != update_tipo:
             print(f"   ⚠️  Cache INVÁLIDO: update_tipo cambió ({cached_update} → {update_tipo})")
             print(f"   🗑️  Eliminando cache obsoleto...")
             checkpoint5_path.unlink(missing_ok=True)
-            checkpoint5_path = None
             cache_valid = False
-    except (json.JSONDecodeError, OSError):
+        elif cached_fecha_corte != current_fecha_corte:
+            print(f"   ⚠️  Cache INVÁLIDO: fecha_corte cambió ({cached_fecha_corte} → {current_fecha_corte})")
+            print(f"   🗑️  Eliminando cache obsoleto...")
+            checkpoint5_path.unlink(missing_ok=True)
+            cache_valid = False
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"   ⚠️  Error leyendo CP5 cache: {e}")
         cache_valid = False
-        checkpoint5_path.unlink(missing_ok=True)
-        checkpoint5_path = None
 
     if cache_valid:
-        print(f"   ✅ Causas raiz ya existen para {site} - {fecha_final}")
+        print(f"   ✅ Causas raiz ya existen para {site} - {fecha_final} (update: {update_tipo})")
         causas_raiz_exist = True
+        # Enrich ejemplos with dims from enriched parquet (if not already done)
+        try:
+            import pandas as pd
+            enriq_path = data_dir / f'datos_nps_enriquecido_{site}_{fecha_final}.parquet'
+            if enriq_path.exists():
+                _DIM_COLS_ENRICH = [
+                    "PRODUCTO_PRINCIPAL", "SEGMENTO", "NEWBIE_LEGACY",
+                    "FLAG_USA_CREDITO", "FLAG_TARJETA_CREDITO",
+                    "FLAG_USA_INVERSIONES", "FLAG_TOPOFF", "FLAG_PRICING",
+                    "MODELO_DEVICE", "OFERTA_TC",
+                ]
+                df_enriq = pd.read_parquet(enriq_path, engine='pyarrow')
+                dims_lookup = {}
+                id_col = 'CUST_ID' if 'CUST_ID' in df_enriq.columns else 'NPS_TX_CUS_CUST_ID'
+                for _, row in df_enriq.drop_duplicates(subset=[id_col]).iterrows():
+                    cid = str(row[id_col]).split('.')[0]  # strip decimal part
+                    d = {}
+                    for col in _DIM_COLS_ENRICH:
+                        v = row.get(col)
+                        if pd.notna(v) and str(v) not in ("", "Sin dato", "nan"):
+                            d[col] = str(v)
+                    if d:
+                        dims_lookup[cid] = d
+
+                # Inject dims into CP5 JSON ejemplos
+                changed = False
+                with open(checkpoint5_path, 'r', encoding='utf-8') as f:
+                    cp5_data = json.load(f)
+                for motivo, datos in (cp5_data.get('causas_por_motivo') or {}).items():
+                    for causa_key, causa in (datos.get('causas_raiz') or {}).items():
+                        new_ejs = []
+                        for ej in (causa.get('ejemplos') or []):
+                            if isinstance(ej, dict) and not ej.get('dims'):
+                                cid = str(ej.get('cust_id', '')).split('.')[0]
+                                if cid in dims_lookup:
+                                    ej = {**ej, 'dims': dims_lookup[cid]}
+                                    changed = True
+                            new_ejs.append(ej)
+                        causa['ejemplos'] = new_ejs
+                if changed:
+                    with open(checkpoint5_path, 'w', encoding='utf-8') as f:
+                        json.dump(cp5_data, f, ensure_ascii=False, indent=2)
+        except Exception as _e:
+            pass  # dims enrichment is best-effort
     else:
         causas_raiz_exist = False
         print("   No se encontro causas raiz, se generará prompt para Claude")
@@ -277,9 +331,9 @@ if 'df_nps' not in dir():
 
 datos_preparados = preparar_comentarios_para_analisis(
     df_nps=df_nps,
-    mes_actual=fecha_final,
-    motivos_excluir=['Otros motivos', 'Sin informacion'],
-    max_comentarios=100,
+    mes_actual=meses_q_actual,  # Full quarter, not just last month
+    motivos_excluir=['Otros motivos', 'Otros', 'Sin informacion', 'Sin información', 'Outro - Por favor, especifique'],
+    max_comentarios=300,
     motivo_col='MOTIVO'
 )
 
@@ -293,13 +347,47 @@ for motivo, datos_motivo in comentarios_por_motivo.items():
 
 prompt = generar_prompt_para_claude(datos_preparados, site=site)
 
+# Append metadata so Claude Code includes it in the generated JSON
+prompt += f"\n\n## ⚙️ METADATA PARA INCLUIR EN EL JSON\n"
+prompt += f"- update_tipo: \"{update_tipo}\"\n"
+prompt += f"- fecha_corte: \"{current_fecha_corte}\"\n"
+prompt += f"\nIncluir estos valores en metadata del JSON generado.\n"
+
 data_dir.mkdir(exist_ok=True)
 
 prompt_path = data_dir / f'temp_prompt_claude_{site}_{fecha_final}.txt'
 with open(prompt_path, 'w', encoding='utf-8') as f:
     f.write(prompt)
 
-print(f"   \u2705 Prompt generado: {prompt_path.name} (en data/)")
+print(f"   \u2705 Prompt Q actual generado: {prompt_path.name} (en data/)")
+
+# Generate Q anterior prompt too (for comparison)
+fecha_final_ant = quarter_fecha_final(quarter_anterior)
+cp5_ant_path = data_dir / f'checkpoint5_causas_raiz_{site}_{fecha_final}_q_anterior.json'
+if not cp5_ant_path.exists():
+    datos_prep_ant = preparar_comentarios_para_analisis(
+        df_nps=df_nps,
+        mes_actual=meses_q_anterior,
+        motivos_excluir=['Otros motivos', 'Otros', 'Sin informacion', 'Sin información', 'Outro - Por favor, especifique'],
+        max_comentarios=300,
+        motivo_col='MOTIVO'
+    )
+    if datos_prep_ant['metadata']['total_motivos_analizados'] > 0:
+        prompt_ant = generar_prompt_para_claude(datos_prep_ant, site=site)
+        prompt_ant += f"\n\n## ⚙️ METADATA PARA INCLUIR EN EL JSON\n"
+        prompt_ant += f"- update_tipo: \"{update_tipo}\"\n"
+        prompt_ant += f"- fecha_corte: \"{current_fecha_corte}\"\n"
+        prompt_ant += f"- quarter: \"{quarter_anterior}\"\n"
+        prompt_ant += f"\nIncluir estos valores en metadata del JSON generado.\n"
+        prompt_ant += f"\n**IMPORTANTE:** Guardar en: data/checkpoint5_causas_raiz_{site}_{fecha_final}_q_anterior.json\n"
+        prompt_ant_path = data_dir / f'temp_prompt_claude_{site}_{fecha_final}_q_anterior.txt'
+        with open(prompt_ant_path, 'w', encoding='utf-8') as f:
+            f.write(prompt_ant)
+        print(f"   \u2705 Prompt Q anterior generado: {prompt_ant_path.name}")
+    else:
+        print(f"   ⚠️  Q anterior sin comentarios suficientes")
+else:
+    print(f"   \u2705 CP5 Q anterior ya existe en cache")
 
 datos_prep_path = data_dir / f'temp_datos_preparados_{site}_{fecha_final}.json'
 with open(datos_prep_path, 'w', encoding='utf-8') as f:
@@ -307,14 +395,39 @@ with open(datos_prep_path, 'w', encoding='utf-8') as f:
 
 print(f"   \u2705 Datos preparados guardados: {datos_prep_path.name} (en data/)")
 
+# Generate promoter analysis prompt
+promotores_path = data_dir / f'checkpoint5_promotores_{site}_{fecha_final}.json'
+if not promotores_path.exists():
+    datos_prom = preparar_comentarios_promotores(
+        df_nps=df_nps,
+        mes_actual=meses_q_actual,
+        max_comentarios=200,
+    )
+    if datos_prom['metadata']['total_motivos_analizados'] > 0:
+        prompt_prom = generar_prompt_promotores(datos_prom, site=site)
+        prompt_prom += f"\n\n## ⚙️ METADATA PARA INCLUIR EN EL JSON\n"
+        prompt_prom += f"- update_tipo: \"{update_tipo}\"\n"
+        prompt_prom += f"- fecha_corte: \"{current_fecha_corte}\"\n"
+        prompt_prom += f"\nIncluir estos valores en metadata del JSON generado.\n"
+        prompt_prom_path = data_dir / f'temp_prompt_promotores_{site}_{fecha_final}.txt'
+        with open(prompt_prom_path, 'w', encoding='utf-8') as f:
+            f.write(prompt_prom)
+        print(f"   \u2705 Prompt promotores generado: {prompt_prom_path.name}")
+    else:
+        print(f"   ⚠️  Sin comentarios de promotores suficientes")
+else:
+    print(f"   \u2705 CP5 promotores ya existe en cache")
+
 print("\n" + "="*80)
 print("\u23f8\ufe0f  ANALISIS CUALITATIVO - ACCION REQUERIDA")
 print("="*80)
 print(f"""
 
-Claude Code leerá este archivo automáticamente y ejecutará el análisis:
+Claude Code leerá estos archivos automáticamente y ejecutará el análisis:
 
-   {prompt_path.name}
+   Q actual: {prompt_path.name}
+   Q anterior: temp_prompt_claude_{site}_{fecha_final}_q_anterior.txt (si existe)
+   Promotores: temp_prompt_promotores_{site}_{fecha_final}.txt (si existe)
 
 """)
 

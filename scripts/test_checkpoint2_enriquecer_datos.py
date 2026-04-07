@@ -52,6 +52,8 @@ cargar_transacciones = enrich_config.get('cargar_transacciones', False)
 cargar_inversiones = enrich_config.get('cargar_inversiones', False)
 cargar_segmentacion = enrich_config.get('cargar_segmentacion', False)
 cargar_topoff = enrich_config.get('cargar_topoff', False)
+cargar_pricing = enrich_config.get('cargar_pricing', False)
+cargar_region = enrich_config.get('cargar_region', False)
 usar_tablas_dataflow = enrich_config.get('usar_tablas_dataflow', False)
 dataset_dataflow = enrich_config.get('dataset_dataflow', 'SBOX_NPS_ANALYTICS')
 
@@ -65,13 +67,15 @@ print(f"   Transacciones: {'✅' if cargar_transacciones else '⏭️  deshabili
 print(f"   Inversiones: {'✅' if cargar_inversiones else '⏭️  deshabilitado'}")
 print(f"   Segmentación: {'✅' if cargar_segmentacion else '⏭️  deshabilitado'}")
 print(f"   Top Off: {'✅' if cargar_topoff else '⏭️  deshabilitado'}")
+print(f"   Pricing: {'✅' if cargar_pricing else '⏭️  deshabilitado'}")
+print(f"   Region: {'✅' if cargar_region else '⏭️  deshabilitado'}")
 if cargar_restricciones:
     print(f"   Restricciones OP: ✅ (update={update_tipo})")
-if any([cargar_credits, cargar_transacciones, cargar_inversiones, cargar_segmentacion, cargar_topoff]):
+if any([cargar_credits, cargar_transacciones, cargar_inversiones, cargar_segmentacion, cargar_topoff, cargar_pricing]):
     print(f"   Fuente: {'Tablas Dataflow (' + dataset_dataflow + ')' if usar_tablas_dataflow else 'Queries BigQuery'}")
 
 # Si todo está deshabilitado, salir rápido
-if not any([cargar_credits, cargar_transacciones, cargar_inversiones, cargar_segmentacion, cargar_topoff, cargar_restricciones]):
+if not any([cargar_credits, cargar_transacciones, cargar_inversiones, cargar_segmentacion, cargar_topoff, cargar_pricing, cargar_restricciones]):
     print("\n   ℹ️  No hay fuentes de enriquecimiento habilitadas.")
     print("   💡 Para habilitar, cambia cargar_credits/transacciones/inversiones a true en config.yaml")
     print("\n" + "=" * 80)
@@ -105,9 +109,8 @@ if enriquecido_path.exists():
         data_dir / f'topoff_universo_{site}_{mes_actual}.json',
         data_dir / f'segmentacion_universo_{site}_{mes_actual}.json',
     ]
-    # Aprobacion universo only required for OP updates
-    if update_tipo in ('LINK', 'APICOW'):
-        universo_files.append(data_dir / f'aprobacion_universo_{site}_{mes_actual}.json')
+    universo_files.append(data_dir / f'aprobacion_universo_{site}_{mes_actual}.json')
+    universo_files.append(data_dir / f'pricing_universo_{site}_{mes_actual}.json')
     # Check existence AND that they match current update_tipo
     def _universo_valid(path):
         if not path.exists():
@@ -119,8 +122,7 @@ if enriquecido_path.exists():
     # Also invalidate if .cache pkl files for universo don't match update_tipo
     cache_dir = project_root / '.cache'
     universo_cache_names = ['credits_universo', 'inversiones_universo', 'topoff_universo', 'segmentacion_universo']
-    if update_tipo in ('LINK', 'APICOW'):
-        universo_cache_names.append('aprobacion_universo')
+    universo_cache_names.append('aprobacion_universo')
     for cache_name in universo_cache_names:
         pkl = cache_dir / f'{cache_name}_{site}_{mes_actual}.pkl'
         if pkl.exists():
@@ -188,6 +190,8 @@ tasks = {}
 if cargar_credits:
     tasks['credits'] = lambda: enrichment_loader.load_credits([site], mes_actual)
     tasks['credits_universo'] = lambda: enrichment_loader.load_credits_universo([site], mes_actual)
+    tasks['tc_limite'] = lambda: enrichment_loader.load_tc_limite([site], mes_actual)
+    tasks['tc_limite_universo'] = lambda: enrichment_loader.load_tc_limite_universo([site], mes_actual)
 if cargar_transacciones:
     tasks['transacciones'] = lambda: enrichment_loader.load_transacciones([site], mes_actual)
 if cargar_inversiones:
@@ -199,9 +203,15 @@ if cargar_segmentacion:
 if cargar_topoff:
     tasks['topoff'] = lambda: enrichment_loader.load_topoff([site], mes_actual)
     tasks['topoff_universo'] = lambda: enrichment_loader.load_topoff_universo([site], mes_actual)
-if update_tipo in ('LINK', 'APICOW'):
-    tasks['aprobacion'] = lambda: enrichment_loader.load_aprobacion_op([site], mes_actual)
-    tasks['aprobacion_universo'] = lambda: enrichment_loader.load_aprobacion_universo([site], mes_actual)
+if cargar_pricing:
+    tasks['pricing'] = lambda: enrichment_loader.load_pricing([site], mes_actual)
+    tasks['pricing_universo'] = lambda: enrichment_loader.load_pricing_universo([site], mes_actual)
+if cargar_region and site == 'MLA':
+    tasks['region'] = lambda: enrichment_loader.load_region([site], mes_actual)
+elif cargar_region:
+    print(f"   ⏭️  Region deshabilitado para {site} (solo MLA)")
+tasks['aprobacion'] = lambda: enrichment_loader.load_aprobacion_op([site], mes_actual)
+tasks['aprobacion_universo'] = lambda: enrichment_loader.load_aprobacion_universo([site], mes_actual)
 if cargar_restricciones:
     tasks['restricciones'] = lambda: enrichment_loader.load_restricciones([site], mes_actual)
 
@@ -237,17 +247,77 @@ if 'credits' in fuentes_cargadas:
     df_cr = fuentes_cargadas['credits']
     # Renombrar para join
     df_cr = df_cr.rename(columns={'CUS_CUST_ID': 'CUST_ID', 'TIM_MONTH': 'END_DATE_MONTH'})
+    df_cr['END_DATE_MONTH'] = df_cr['END_DATE_MONTH'].astype(str)
     # Dedup: tomar último registro por seller+mes
     df_cr = df_cr.drop_duplicates(subset=['CUST_ID', 'END_DATE_MONTH'], keep='last')
     # Seleccionar columnas útiles para evitar conflictos
     cols_credits = ['CUST_ID', 'END_DATE_MONTH', 'CREDIT_GROUP', 'FLAG_USA_CREDITO',
-                    'FLAG_TARJETA_CREDITO', 'ESTADO_OFERTA_CREDITO']
+                    'FLAG_TARJETA_CREDITO', 'ESTADO_OFERTA_CREDITO', 'FLAG_TC_OFFER']
     cols_disponibles = [c for c in cols_credits if c in df_cr.columns]
     df_cr = df_cr[cols_disponibles]
 
     n_antes = len(df_enriched)
     df_enriched = df_enriched.merge(df_cr, on=['CUST_ID', 'END_DATE_MONTH'], how='left')
+    # OFERTA_TC se deriva en el bloque tc_limite (FLAG_TC_OFFER viene vacío en CREDITS_SELLERS)
     print(f"   ✅ Credits joineado: {len(df_enriched):,} registros (match rate: {df_enriched['FLAG_USA_CREDITO'].notna().mean()*100:.0f}%)")
+
+# TC Límite: join por CUST_ID + END_DATE_MONTH
+if 'tc_limite' in fuentes_cargadas:
+    df_tc = fuentes_cargadas['tc_limite']
+    df_tc = df_tc.rename(columns={'CUS_CUST_ID': 'CUST_ID', 'TIM_MONTH': 'END_DATE_MONTH'})
+    df_tc['END_DATE_MONTH'] = df_tc['END_DATE_MONTH'].astype(str)
+    df_tc = df_tc.drop_duplicates(subset=['CUST_ID', 'END_DATE_MONTH'], keep='last')
+    cols_tc = ['CUST_ID', 'END_DATE_MONTH', 'LIMITE_OFRECIDO', 'LIMITE_CONSUMIDO', 'FLAG_TC_OFFER']
+    cols_disponibles = [c for c in cols_tc if c in df_tc.columns]
+    df_tc = df_tc[cols_disponibles]
+    # Avoid column conflict: tc_limite trae FLAG_TC_OFFER real (CREDITS_SELLERS lo tiene vacío)
+    if 'FLAG_TC_OFFER' in df_enriched.columns:
+        df_enriched = df_enriched.drop(columns=['FLAG_TC_OFFER'])
+    if 'OFERTA_TC' in df_enriched.columns:
+        df_enriched = df_enriched.drop(columns=['OFERTA_TC'])
+    df_enriched = df_enriched.merge(df_tc, on=['CUST_ID', 'END_DATE_MONTH'], how='left')
+    # Derivar OFERTA_TC desde FLAG_TC_OFFER (ahora de LK_MP_MAUS_CREDIT_PROFILE)
+    # FLAG_TC_OFFER puede llegar como int (0/1) o como string ya mapeado ("Con oferta TC")
+    if 'FLAG_TC_OFFER' in df_enriched.columns:
+        col = df_enriched['FLAG_TC_OFFER']
+        if col.dropna().apply(lambda x: isinstance(x, str)).any():
+            # Ya viene como string desde BQ — usar directamente, normalizar NaN
+            df_enriched['OFERTA_TC'] = col.where(col.notna(), 'Sin dato')
+        else:
+            df_enriched['OFERTA_TC'] = col.map({1: 'Con oferta TC', 0: 'Sin oferta TC'}).fillna('Sin dato')
+    # Derivar RANGO_LIMITE_TC para análisis por dimensión (rangos por moneda local)
+    if 'LIMITE_OFRECIDO' in df_enriched.columns:
+        import numpy as np
+        RANGOS_LIMITE_TC = {
+            'MLB': {  # BRL
+                'cortes': [0, 500, 2000, 8000, 25000],
+                'labels': ['Sin límite', 'Hasta R$500', 'R$500-2K', 'R$2K-8K', 'R$8K-25K', '+R$25K'],
+            },
+            'MLM': {  # MXN
+                'cortes': [0, 3000, 10000, 30000, 80000],
+                'labels': ['Sin límite', 'Hasta $3K', '$3K-10K', '$10K-30K', '$30K-80K', '+$80K'],
+            },
+            'MLA': {  # ARS
+                'cortes': [0, 100000, 500000, 1500000, 5000000],
+                'labels': ['Sin límite', 'Hasta $100K', '$100K-500K', '$500K-1.5M', '$1.5M-5M', '+$5M'],
+            },
+        }
+        rango_cfg = RANGOS_LIMITE_TC.get(site, RANGOS_LIMITE_TC['MLB'])
+        cortes = rango_cfg['cortes']
+        lbls = rango_cfg['labels']
+        conditions = [
+            df_enriched['LIMITE_OFRECIDO'].isna(),
+            df_enriched['LIMITE_OFRECIDO'] <= cortes[0],
+            df_enriched['LIMITE_OFRECIDO'] <= cortes[1],
+            df_enriched['LIMITE_OFRECIDO'] <= cortes[2],
+            df_enriched['LIMITE_OFRECIDO'] <= cortes[3],
+            df_enriched['LIMITE_OFRECIDO'] <= cortes[4],
+            df_enriched['LIMITE_OFRECIDO'] > cortes[4],
+        ]
+        all_labels = ['Sin TC'] + lbls
+        df_enriched['RANGO_LIMITE_TC'] = np.select(conditions, all_labels, default='Sin dato')
+    match_rate = df_enriched['LIMITE_OFRECIDO'].notna().mean() * 100
+    print(f"   ✅ TC Límite joineado: {len(df_enriched):,} registros (match rate: {match_rate:.0f}%)")
 
 # Transacciones: join por CUS_CUST_ID + TIM_MONTH
 if 'transacciones' in fuentes_cargadas:
@@ -267,6 +337,7 @@ if 'transacciones' in fuentes_cargadas:
 if 'inversiones' in fuentes_cargadas:
     df_inv = fuentes_cargadas['inversiones']
     df_inv = df_inv.rename(columns={'CUS_CUST_ID': 'CUST_ID', 'TIM_MONTH': 'END_DATE_MONTH'})
+    df_inv['END_DATE_MONTH'] = df_inv['END_DATE_MONTH'].astype(str)
     df_inv = df_inv.drop_duplicates(subset=['CUST_ID', 'END_DATE_MONTH'], keep='last')
     cols_inv = ['CUST_ID', 'END_DATE_MONTH', 'FLAG_POTS_ACTIVO', 'FLAG_USA_INVERSIONES',
                 'FLAG_INVERSIONES', 'FLAG_ASSET', 'FLAG_WINNER']
@@ -345,6 +416,55 @@ if 'topoff' in fuentes_cargadas:
     topoff_match = (df_enriched['FLAG_TOPOFF'] == 'Con Top Off').sum()
     print(f"   ✅ Top Off joineado: {len(df_enriched):,} registros (match rate: {topoff_match / len(df_enriched) * 100:.1f}%)")
 
+# Pricing: join por CUST_ID + END_DATE_MONTH (o solo CUST_ID para MLA/MLM)
+if 'pricing' in fuentes_cargadas:
+    df_pr = fuentes_cargadas['pricing']
+    df_pr = df_pr.rename(columns={'CUS_CUST_ID': 'CUST_ID', 'TIM_MONTH': 'END_DATE_MONTH'})
+    df_pr['END_DATE_MONTH'] = df_pr['END_DATE_MONTH'].astype(str)
+    df_pr = df_pr.drop_duplicates(subset=['CUST_ID', 'END_DATE_MONTH'], keep='last')
+
+    cols_pricing = ['CUST_ID', 'END_DATE_MONTH', 'PRICING', 'SCALE_LEVEL', 'PRICING_TYPE', 'PRICING_DESCRIPTION']
+    cols_disponibles = [c for c in cols_pricing if c in df_pr.columns]
+    df_pr = df_pr[cols_disponibles]
+
+    if 'END_DATE_MONTH' in df_pr.columns and len(df_pr['END_DATE_MONTH'].unique()) > 1:
+        df_enriched = df_enriched.merge(df_pr, on=['CUST_ID', 'END_DATE_MONTH'], how='left')
+    else:
+        # MLA/MLM: join solo por CUST_ID (pricing es snapshot, no mensual)
+        df_pr_nodups = df_pr.drop(columns=['END_DATE_MONTH'], errors='ignore').drop_duplicates(subset=['CUST_ID'], keep='last')
+        df_enriched = df_enriched.merge(df_pr_nodups, on=['CUST_ID'], how='left')
+
+    # Convert to categorical labels
+    df_enriched['PRICING'] = df_enriched['PRICING'].fillna(0).astype(int)
+    df_enriched['FLAG_PRICING'] = df_enriched['PRICING'].map({1: 'Con pricing escalas', 0: 'Sin pricing escalas'})
+    df_enriched['SCALE_LEVEL'] = df_enriched['SCALE_LEVEL'].apply(
+        lambda x: f"Escala {int(x)}" if pd.notna(x) and x != 0 else "Sin escala"
+    )
+    pricing_match = (df_enriched['FLAG_PRICING'] == 'Con pricing escalas').sum()
+    print(f"   ✅ Pricing joineado: {len(df_enriched):,} registros (match rate: {pricing_match / len(df_enriched) * 100:.1f}%)")
+
+# Region: join por CUST_ID + END_DATE_MONTH
+if 'region' in fuentes_cargadas:
+    df_reg = fuentes_cargadas['region']
+    df_reg = df_reg.rename(columns={'CUS_CUST_ID': 'CUST_ID', 'TIM_MONTH': 'END_DATE_MONTH'})
+    df_reg['END_DATE_MONTH'] = df_reg['END_DATE_MONTH'].astype(str)
+    df_reg = df_reg.drop_duplicates(subset=['CUST_ID', 'END_DATE_MONTH'], keep='last')
+    cols_reg = ['CUST_ID', 'END_DATE_MONTH', 'REGION', 'CIUDAD']
+    cols_disponibles = [c for c in cols_reg if c in df_reg.columns]
+    df_reg = df_reg[cols_disponibles]
+    df_enriched = df_enriched.merge(df_reg, on=['CUST_ID', 'END_DATE_MONTH'], how='left')
+    # Normalize region: title case + group macro-regions
+    if 'REGION' in df_enriched.columns:
+        df_enriched['REGION'] = df_enriched['REGION'].str.strip().str.title()
+        # Group Buenos Aires variants
+        ba_variants = ['Buenos Aires', 'Ciudad Autonoma Buenos Aires', 'Ciudad Autónoma Buenos Aires',
+                       'Capital Federal', 'Caba', 'C.a.b.a.', 'Ciudad De Buenos Aires']
+        df_enriched.loc[df_enriched['REGION'].isin(ba_variants), 'REGION'] = 'Buenos Aires'
+    if 'CIUDAD' in df_enriched.columns:
+        df_enriched['CIUDAD'] = df_enriched['CIUDAD'].str.strip().str.title()
+    region_match = df_enriched['REGION'].notna().sum()
+    print(f"   ✅ Region joineado: {len(df_enriched):,} registros (match rate: {region_match / len(df_enriched) * 100:.1f}%)")
+
 # Aprobación OP: join por CUST_ID + END_DATE_MONTH, derive RANGO_APROBACION
 if 'aprobacion' in fuentes_cargadas:
     df_ap = fuentes_cargadas['aprobacion']
@@ -401,7 +521,7 @@ if 'credits_universo' in fuentes_cargadas:
     cu_path = data_dir / f'credits_universo_{site}_{mes_actual}.json'
     # Convertir a dict por dimensión y mes para fácil consumo
     cu_data = {}
-    for dim in ['CREDIT_GROUP', 'FLAG_USA_CREDITO', 'FLAG_TARJETA_CREDITO', 'ESTADO_OFERTA_CREDITO']:
+    for dim in ['CREDIT_GROUP', 'FLAG_USA_CREDITO', 'FLAG_TARJETA_CREDITO', 'ESTADO_OFERTA_CREDITO', 'FLAG_TC_OFFER']:
         if dim not in df_cu.columns:
             continue
         agg = df_cu.groupby(['TIM_MONTH', dim])['total_sellers'].sum().reset_index()
@@ -413,9 +533,40 @@ if 'credits_universo' in fuentes_cargadas:
             total = totals.get(row['TIM_MONTH'], 1)
             shares.setdefault(dim, {}).setdefault(val, {})[mes] = round(float(row['total_sellers'] / total * 100), 2)
         cu_data.update(shares)
+    # Map FLAG_TC_OFFER (0/1) → OFERTA_TC labels for consistency with survey data
+    if 'FLAG_TC_OFFER' in cu_data:
+        oferta_mapped = {}
+        for val, mes_shares in cu_data['FLAG_TC_OFFER'].items():
+            label = {'1': 'Con oferta TC', '0': 'Sin oferta TC'}.get(str(val).strip(), val)
+            oferta_mapped[label] = mes_shares
+        cu_data['OFERTA_TC'] = oferta_mapped
+        del cu_data['FLAG_TC_OFFER']
     with open(cu_path, 'w', encoding='utf-8') as f:
         _json.dump(cu_data, f, indent=2, ensure_ascii=False)
     print(f"   ✅ Universo credits guardado: {cu_path.name}")
+
+if 'tc_limite_universo' in fuentes_cargadas:
+    import json as _json_tcl
+    df_tcl = fuentes_cargadas.pop('tc_limite_universo')
+    tcl_path = data_dir / f'tc_limite_universo_{site}_{mes_actual}.json'
+    tcl_data = {}
+    if 'TIM_MONTH' in df_tcl.columns:
+        for dim in ['FLAG_TC_OFFER', 'RANGO_LIMITE_TC']:
+            if dim not in df_tcl.columns:
+                continue
+            totals = df_tcl.groupby('TIM_MONTH')['total_sellers'].sum()
+            for _, row in df_tcl.iterrows():
+                mes = str(row['TIM_MONTH'])
+                raw_val = str(row[dim])
+                val = {'1': 'Con oferta TC', '0': 'Sin oferta TC'}.get(raw_val, raw_val)
+                out_key = 'OFERTA_TC' if dim == 'FLAG_TC_OFFER' else dim
+                total = totals.get(row['TIM_MONTH'], 1)
+                tcl_data.setdefault(out_key, {}).setdefault(val, {})[mes] = round(
+                    float(row['total_sellers'] / total * 100), 2
+                )
+    with open(tcl_path, 'w', encoding='utf-8') as f:
+        _json_tcl.dump(tcl_data, f, indent=2, ensure_ascii=False)
+    print(f"   ✅ Universo TC límite guardado: {tcl_path.name}")
 
 if 'inversiones_universo' in fuentes_cargadas:
     import json as _json_inv
@@ -491,6 +642,26 @@ if 'aprobacion_universo' in fuentes_cargadas:
     with open(au_path, 'w', encoding='utf-8') as f:
         _json_ap.dump(au_data, f, indent=2, ensure_ascii=False)
     print(f"   ✅ Universo aprobacion guardado: {au_path.name}")
+
+# Pricing universo → JSON
+if 'pricing_universo' in fuentes_cargadas:
+    import json as _json_pr
+    df_pu = fuentes_cargadas.pop('pricing_universo')
+    pu_path = data_dir / f'pricing_universo_{site}_{mes_actual}.json'
+    pu_data = {}
+    if 'TIM_MONTH' in df_pu.columns:
+        for dim_col in ['FLAG_PRICING', 'SCALE_LEVEL']:
+            if dim_col not in df_pu.columns:
+                continue
+            totals = df_pu.groupby('TIM_MONTH')['total_sellers'].sum()
+            for _, row in df_pu.iterrows():
+                mes = str(row['TIM_MONTH'])
+                val = str(row[dim_col])
+                total = totals.get(row['TIM_MONTH'], 1)
+                pu_data.setdefault(dim_col, {}).setdefault(val, {})[mes] = round(float(row['total_sellers'] / total * 100), 2)
+    with open(pu_path, 'w', encoding='utf-8') as f:
+        _json_pr.dump(pu_data, f, indent=2, ensure_ascii=False)
+    print(f"   ✅ Universo pricing guardado: {pu_path.name}")
 
 # Paso 7: Guardar parquet enriquecido
 print("\n💾 Paso 7: Guardando datos enriquecidos...")

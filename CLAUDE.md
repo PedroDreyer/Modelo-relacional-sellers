@@ -205,6 +205,27 @@ Para modo 1 (update):
 ¿Confirmo y arranco? (responde SÍ para continuar)
 ```
 
+**Después de que el usuario confirma, ANTES de ejecutar, preguntar por eventos externos:**
+
+```
+📋 ¿Hay eventos externos relevantes para este quarter?
+   Ejemplos: caídas de servicio (AWS), cambios regulatorios (IIBB),
+   campañas (TC, cashback), repricings, cambios de producto.
+
+   Si hay → describí brevemente cada uno
+   Si no hay → respondé "no" y arranco
+```
+
+Si el usuario informa eventos:
+1. Cargar en `config/eventos_externos.yaml` con Write tool (agregar al YAML existente)
+2. Formato: quarter, sites afectados, descripción del evento, impacto estimado, tipo (infraestructura/regulatorio/campana/pricing)
+3. El motor de razonamiento los incluirá como "Contexto:" al final del recuadro gris
+4. **NO reemplaza el análisis de datos** — es complemento contextual
+
+Si el usuario dice "no":
+1. Limpiar eventos del quarter actual en `config/eventos_externos.yaml` (para no arrastrar eventos viejos)
+2. Continuar con la ejecución
+
 Para modo 2 (personalizado):
 ```
 ✅ Perfecto, voy a analizar:
@@ -518,6 +539,10 @@ docs/LOGICA_RECUADRO_GRIS.md
 
 □ Confirmar con usuario antes de ejecutar
 
+□ Preguntar por eventos externos del quarter:
+   └─ Si hay → cargar en config/eventos_externos.yaml
+   └─ Si no → limpiar eventos del quarter actual
+
 □ Modificar config.yaml con Edit tool:
    └─ sites
    └─ quarter_actual
@@ -555,6 +580,10 @@ INICIO
 Pedir Site + Quarters + Producto
   ↓
 Confirmar con usuario
+  ↓
+Preguntar eventos externos (AWS, IIBB, campañas, repricings)
+  ├─ Si hay → cargar en config/eventos_externos.yaml
+  └─ Si no → limpiar eventos del quarter
   ↓
 Modificar config.yaml (Edit tool)
   ↓

@@ -66,7 +66,7 @@ def generar_tab1(
 
     # ── Chart data ───────────────────────────────────────────────────
     chart_labels = json.dumps([_fmt_mes(d["mes"]) for d in nps_evolucion])
-    chart_values = json.dumps([d["nps"] for d in nps_evolucion])
+    chart_values = json.dumps([round(d["nps"]) for d in nps_evolucion])
 
     colores_default = [
         "#d32f2f", "#1565c0", "#2e7d32", "#ff6f00",
@@ -88,13 +88,19 @@ def generar_tab1(
         return colores_config.get("_default", "#9E9E9E")
 
     quejas_datasets = []
-    for i, mt in enumerate(motivos_top[:8]):
+    otros_dataset = None
+    for i, mt in enumerate(motivos_top):
         c = _color_motivo(mt["motivo"])
-        quejas_datasets.append({
+        ds = {
             "label": mt["motivo"],
             "data": [d["valor"] for d in mt["serie"]],
             "backgroundColor": c,
-        })
+        }
+        # "Otros" goes last (above Resto) — hold it aside
+        if mt["motivo"] == "Otros":
+            otros_dataset = ds
+        else:
+            quejas_datasets.append(ds)
 
     # Calcular "Otros" para que el total cierre con 100 - NPS
     # nps_evolucion tiene {mes: label_quarter, nps: valor}
@@ -103,19 +109,26 @@ def generar_tab1(
     otros_data = []
     for idx, ql in enumerate(meses_quejas):
         total_top8 = sum(ds["data"][idx] for ds in quejas_datasets if idx < len(ds["data"]))
-        nps_val = nps_by_label.get(ql, 0)
+        nps_val = nps_by_label.get(ql)
+        if nps_val is None:
+            otros_data.append(0)
+            continue
         total_quejas_esperado = 100 - nps_val
         otros_val = max(0, round(total_quejas_esperado - total_top8, 2))
         otros_data.append(otros_val)
-    if any(v > 0.1 for v in otros_data):
-        quejas_datasets.append({
-            "label": "Resto",
-            "data": otros_data,
-            "backgroundColor": "#e0e0e0",
-        })
+    # Add "Otros" last (on top of stack)
+    if otros_dataset:
+        quejas_datasets.append(otros_dataset)
 
     quejas_labels = json.dumps([_fmt_mes(m) for m in meses_quejas])
     quejas_ds_json = json.dumps(quejas_datasets)
+
+    # Dynamic Y-axis max: round up to nearest 10 above max total quejas
+    max_total_quejas = max(
+        (100 - d["nps"] for d in nps_evolucion if d.get("nps") is not None),
+        default=60,
+    )
+    quejas_y_max = int((max_total_quejas + 9) // 10 * 10)  # round up to nearest 10
 
     # ── Quejas cards ─────────────────────────────────────────────────
     bloque3 = razonamiento.get("bloque3", {})
@@ -143,7 +156,7 @@ def generar_tab1(
         "var(--red)", "var(--orange)", "var(--green)", "var(--purple)",
         "var(--blue)", "var(--teal)", "#607d8b", "#795548",
     ]
-    for idx, vq in enumerate(variaciones_quejas[:8]):
+    for idx, vq in enumerate(variaciones_quejas):
         motivo = vq.get("motivo")
         if motivo is None:
             continue
@@ -228,7 +241,7 @@ const _npsValues = {chart_values};
 new Chart(document.getElementById('chartNPS'), {{
   type:'line',
   data:{{labels:_npsLabels,datasets:[{{label:'NPS {site}',data:_npsValues,borderColor:'#2196f3',backgroundColor:'rgba(33,150,243,.1)',fill:true,tension:.35,pointRadius:5,pointBackgroundColor:'#2196f3',borderWidth:2.5}}]}},
-  options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:true,position:'bottom',labels:{{font:{{size:11}},boxWidth:14,padding:8}}}},tooltip:{{callbacks:{{label:c=>c.parsed.y+' p.p.'}}}}}},scales:{{y:{{min:0,max:100,ticks:{{callback:v=>v+' p.p.'}}}}}}}},
+  options:{{responsive:true,maintainAspectRatio:false,plugins:{{datalabels:{{display:false}},legend:{{display:true,position:'bottom',labels:{{font:{{size:11}},boxWidth:14,padding:8}}}},tooltip:{{callbacks:{{label:c=>c.parsed.y+' p.p.'}}}}}},scales:{{y:{{min:0,max:100,ticks:{{callback:v=>v+' p.p.'}}}}}}}},
   plugins:[{{
     id:'npsLabels',
     afterDatasetsDraw(chart){{
@@ -254,6 +267,7 @@ new Chart(document.getElementById('chartQuejas'), {{
   options:{{
     responsive:true,maintainAspectRatio:false,
     plugins:{{
+      datalabels:{{display:false}},
       legend:{{
         position:'bottom',
         labels:{{
@@ -264,11 +278,11 @@ new Chart(document.getElementById('chartQuejas'), {{
           usePointStyle:false
         }}
       }},
-      tooltip:{{callbacks:{{label:c=>c.dataset.label+': '+Math.round(c.parsed.y)+'%'}}}}
+      tooltip:{{callbacks:{{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(1)+'%'}}}}
     }},
     scales:{{
       x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11,weight:'bold'}}}}}},
-      y:{{stacked:true,min:0,max:50,ticks:{{callback:v=>v+'%',stepSize:5,font:{{size:10}},color:'#999'}},grid:{{color:'#f5f5f5',drawBorder:false}}}}
+      y:{{stacked:true,min:0,max:{quejas_y_max},ticks:{{callback:v=>v+'%',stepSize:10,font:{{size:10}},color:'#999'}},grid:{{color:'#f5f5f5',drawBorder:false}}}}
     }},
     elements:{{bar:{{borderWidth:0,borderRadius:0,borderSkipped:false}}}}
   }},
@@ -278,12 +292,10 @@ new Chart(document.getElementById('chartQuejas'), {{
       const ctx=chart.ctx;
       ctx.save();
       const umbralLabel = 2.0;
-      // Labels inside bars (integer %)
       ctx.font='bold 10px sans-serif';
       ctx.textAlign='center';
       ctx.textBaseline='middle';
-      // Light colors that need dark text
-      const lightColors = ['#FDD835','#AED581','#BDBDBD','#bdbdbd','#F48FB1','#4FC3F7','#CE93D8','#9E9E9E','#fff3e0','#e8f5e9'];
+      const lightColors = ['#FDD835','#AED581','#BDBDBD','#bdbdbd','#F48FB1','#4FC3F7','#CE93D8','#9E9E9E','#fff3e0','#e8f5e9','#e0e0e0','#FFD54F'];
       function needsDarkText(bgColor){{
         if(!bgColor) return false;
         return lightColors.some(c=>c.toLowerCase()===bgColor.toLowerCase());
@@ -299,7 +311,6 @@ new Chart(document.getElementById('chartQuejas'), {{
           }}
         }});
       }});
-      // Totals on top of each bar (bold, integer)
       const nLabels=chart.data.labels.length;
       ctx.font='bold 12px sans-serif';
       ctx.fillStyle='#333';

@@ -86,6 +86,12 @@ DIMENSIONES_TOPOFF = [
     "FLAG_TOPOFF",
 ]
 
+# Enrichment: pricing por escalas
+DIMENSIONES_PRICING = [
+    "FLAG_PRICING",
+    "SCALE_LEVEL",
+]
+
 # Enrichment: aprobación de pagos (OP only)
 DIMENSIONES_APROBACION = [
     "RANGO_APROBACION",
@@ -120,6 +126,7 @@ DIMENSIONES_SELLERS = (
     + DIMENSIONES_CREDITS
     + DIMENSIONES_INVERSIONES
     + DIMENSIONES_TOPOFF
+    + DIMENSIONES_PRICING
     + DIMENSIONES_APROBACION
     + DIMENSIONES_DEVICE
 )
@@ -140,12 +147,16 @@ DIMENSION_CONFIG_MAP = {
     "analizar_tarjeta_credito": "FLAG_TARJETA_CREDITO",
     "analizar_estado_oferta_credito": "ESTADO_OFERTA_CREDITO",
     "analizar_credit_group": "CREDIT_GROUP",
+    "analizar_oferta_tc": "OFERTA_TC",
+    "analizar_rango_limite_tc": "RANGO_LIMITE_TC",
     "analizar_uso_inversiones": "FLAG_USA_INVERSIONES",
     "analizar_pots_activo": "FLAG_POTS_ACTIVO",
     "analizar_inversiones_flag": "FLAG_INVERSIONES",
     "analizar_asset_flag": "FLAG_ASSET",
     "analizar_winner_flag": "FLAG_WINNER",
     "analizar_topoff": "FLAG_TOPOFF",
+    "analizar_pricing": "FLAG_PRICING",
+    "analizar_scale_level": "SCALE_LEVEL",
     "analizar_tasa_aprobacion": "RANGO_APROBACION",
     "analizar_only_transfer": "FLAG_ONLY_TRANSFER",
     "analizar_modelo_device": "MODELO_DEVICE",

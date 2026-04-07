@@ -19,7 +19,13 @@ sites:
 quarter_actual: "26Q1"
 quarter_anterior: "25Q4"
 
-# Colores corporativos para motivos (NPS Relacional - Evolución de quejas)
+# Fecha de corte del quarter actual (opcional)
+# Si se especifica, solo se incluyen encuestas hasta esta fecha (inclusive)
+# Formato: YYYY-MM-DD. Si no se especifica o es null, se usa todo el quarter.
+# Ejemplos: "2026-01-31" (enero cerrado), "2026-02-14" (hasta 14 feb)
+fecha_corte: "2026-03-31"
+
+# Colores corporativos para motivos (NPS Relacional - MLBvolución de quejas)
 # Clave = texto a buscar en el nombre del motivo (minúsculas). Se usa la primera coincidencia.
 # _default = color para motivos no mapeados
 colores_motivos:
@@ -31,21 +37,26 @@ colores_motivos:
   crédito: "#26A69A"
   credito: "#26A69A"
   cartão de crédito: "#26A69A"
-  # Verde oscuro — Taxas e custos / comissões
+  # Verde oscuro — Taxas e comissões por venda (consolidado viejo+nuevo)
+  taxas e comissões por venda: "#2E7D32"
   taxas e custos: "#2E7D32"
-  taxas e comissões: "#2E7D32"
   comissões por venda: "#2E7D32"
   tasas: "#2E7D32"
   comisiones: "#2E7D32"
   # Rojo — Cobros / Pagamentos recusados
   cobros recusados: "#E53935"
   pagamentos recusados: "#E53935"
-  # Gris claro — Qualidade e funcionamento da maquininha
-  qualidade e funcionamento da maquininha: "#BDBDBD"
-  maquininha: "#BDBDBD"
+  # Celeste grisáceo — Qualidade maquininha (ambos wordings)
+  qualidade e funcionamento da maquininha: "#90A4AE"
+  qualidade e dificuldade de uso da maquininha: "#90A4AE"
+  qualidade e facilidade de uso da maquininha: "#90A4AE"
+  calidad y dificultad: "#90A4AE"
+  maquininha: "#90A4AE"
   # Amarillo — Falta de parcelamento sem juros
   parcelamento sem juros: "#FDD835"
-  parceladas: "#FDD835"
+  # Amarillo oscuro — Vendas parceladas
+  vendas parceladas: "#F9A825"
+  cobro en cuotas: "#F9A825"
   # Verde claro/lima — Plazo de disponibilidad
   plazo de disponibilidad: "#AED581"
   prazo para disponibilização: "#AED581"
@@ -126,6 +137,12 @@ enriquecimiento:
   # Top Off: atención al cliente (BT_CX_SELLERS_MP_TOP_OFF)
   cargar_topoff: true
 
+  # Pricing: pricing por escalas (LK_POLITICAS_PRICING_DIARIO / LK_MP_PRODUCT_PRICING)
+  cargar_pricing: true
+
+  # Region: provincia/estado del seller (KYC)
+  cargar_region: true
+
   # Segmentación: producto principal, NEW_MAS_FLAG, segmento, PF/PJ
   cargar_segmentacion: true
 
@@ -153,9 +170,9 @@ deep_dive_enriquecimiento:
     dimension_key: "FLAG_USA_INVERSIONES"
     titulo: "Datos Inversiones"
   - patrones: ["tax", "comis", "pric", "tasas", "tarifa"]
-    dimension_key: "RANGO_TPV"
-    titulo: "Pricing / Escalas"
-    sin_datos_mensaje: "Ver dimensión Rangos TPV/TPN en Apertura por producto."
+    dimension_key: "FLAG_PRICING"
+    titulo: "Pricing por Escalas"
+    sin_datos_mensaje: "Datos de pricing no disponibles para este período."
   - patrones: ["atend", "atencion", "top off", "cliente"]
     dimension_key: "FLAG_TOPOFF"
     titulo: "Atención al cliente / Top Off"
@@ -167,7 +184,7 @@ deep_dive_enriquecimiento:
 # Opciones: Point, SMBs, OP, all
 
 update:
-  tipo: "SMBs"
+  tipo: "Point"
 
 # ==========================================
 # ANÁLISIS POR DIMENSIONES
@@ -176,45 +193,51 @@ update:
 # Dimensiones adicionales para análisis de shares y variaciones
 # Las dimensiones habilitadas generan secciones en el resumen ejecutivo
 dimensiones:
-  # --- Dimensiones base (de la encuesta) ---
+  # --- MLBimensiones base (de la encuesta) ---
   analizar_segmento_tamano: true
   analizar_segmento_crossmp: true
   analizar_point_device_type: true
   analizar_pf_pj: true
   analizar_e_code: false
-  
-  # --- Dimensiones de segmentación enriquecida ---
-  analizar_producto_principal: true
+
+  # --- MLBimensiones de segmentación enriquecida ---
+  analizar_producto_principal: false
   analizar_newbie_legacy: true
-  analizar_region: false
-  
-  # --- Dimensiones de transacciones ---
+  analizar_region: true
+
+  # --- MLBimensiones de transacciones ---
   analizar_rango_tpv: true
   analizar_rango_tpn: true
-  
-  # --- Dimensiones de créditos ---
+
+  # --- MLBimensiones de créditos ---
   analizar_uso_credito: true
   analizar_tarjeta_credito: true
   analizar_estado_oferta_credito: true
   analizar_credit_group: true
-  
-  # --- Dimensiones de inversiones ---
+  analizar_oferta_tc: true
+  analizar_rango_limite_tc: true
+
+  # --- MLBimensiones de inversiones ---
   analizar_uso_inversiones: true
   analizar_pots_activo: true
   analizar_inversiones_flag: true
   analizar_asset_flag: true
   analizar_winner_flag: true
-  
-  # --- Dimensiones de segmentación adicionales ---
+
+  # --- MLBimensiones de segmentación adicionales ---
   analizar_only_transfer: true
 
-  # --- Dimensiones de aprobación de pagos (OP only) ---
+  # --- MLBimensiones de aprobación de pagos (todos los updates) ---
   analizar_tasa_aprobacion: true
 
-  # --- Dimensiones de atención al cliente ---
+  # --- MLBimensiones de pricing ---
+  analizar_pricing: true
+  analizar_scale_level: true
+
+  # --- MLBimensiones de atención al cliente ---
   analizar_topoff: true
 
-  # --- Dimensiones de device / problemas ---
+  # --- MLBimensiones de device / problemas ---
   analizar_modelo_device: true
   analizar_problema_funcionamiento: true
   analizar_tipo_problema: true
@@ -229,7 +252,7 @@ analisis_cualitativo:
   enabled: true
   
   # Número máximo de comentarios a analizar por motivo
-  max_comentarios_por_motivo: 200
+  max_comentarios_por_motivo: 500
   
   # Top N motivos para análisis detallado
   top_n_motivos: 3
@@ -256,7 +279,7 @@ umbrales:
   # Porcentaje mínimo para mostrar etiquetas en gráficos
   etiqueta_grafico: 2.0
 
-  # --- Umbrales del motor de razonamiento (Bloques 1-4) ---
+  # --- MLBmbrales del motor de razonamiento (Bloques 1-4) ---
   # ±pp para considerar NPS "sin cambio" (Bloque 1)
   umbral_nps_estable: 1.0
   # Motivos en dirección del NPS: si NPS baja, motivos que suben >= este valor (pp)
@@ -333,16 +356,22 @@ logging:
 
 mapeo_motivo_dimension:
   - patrones: ["tax", "comis", "tasas", "tarifa", "pric"]
-    dimension_key: "RANGO_TPV"
-    descripcion: "pricing por escalas de TPV"
-    # relacion_inversa: false (default) → mayor TPV = menores quejas por comisiones
-    # Nota: cuando exista query de pricing real, esto puede cambiar
-  - patrones: ["credito", "credit", "empresti", "cartao", "fred", "financ"]
-    dimension_key: "CREDIT_GROUP"
-    descripcion: "oferta/uso de créditos y TC"
+    dimension_key: "FLAG_PRICING"
+    descripcion: "pricing por escalas"
     relacion_inversa: true
-    # MENOS sellers con oferta → MÁS quejas por crédito
-    # MENOS sellers usando crédito → MÁS quejas
+    # Sellers SIN pricing escalas → MÁS quejas por comisiones
+    # Sellers CON pricing escalas → mejor NPS en comisiones
+  - patrones: ["credito", "credit", "empresti", "cartao", "fred", "financ"]
+    dimension_key: "FLAG_USA_CREDITO"
+    descripcion: "uso de créditos"
+    relacion_inversa: true
+    # NPS de usuarios de crédito baja → MÁS quejas por crédito
+    # Más simple que CREDIT_GROUP (FRED groups 1-5)
+  - patrones: ["tarjeta", "cartao de credito", "tc mp", "limite"]
+    dimension_key: "FLAG_TARJETA_CREDITO"
+    descripcion: "uso de tarjeta de credito MP"
+    relacion_inversa: true
+    # NPS de sellers con TC baja → MAS quejas por TC/limites
   - patrones: ["invest", "poupan", "cofrin", "invers", "retorno"]
     dimension_key: "FLAG_USA_INVERSIONES"
     descripcion: "uso de inversiones (Pots/Turbinado)"
@@ -389,7 +418,34 @@ drill_down:
   APICOW:
     cross_dimension: "SEGMENTO"
     cross_label: "segmento"
-  # Para SMBs: profundizar por Producto Principal
+  # Para SMBs: profundizar por Producto Principal (default)
   SMBs:
     cross_dimension: "PRODUCTO_PRINCIPAL"
     cross_label: "producto"
+
+  # Override por dimensión: cada driver puede tener su propio cruce
+  # Si no está listado, usa el cross_dimension del update_tipo
+  per_dimension:
+    FLAG_TOPOFF:
+      cross_dimension: "POINT_DEVICE_TYPE"
+      cross_label: "device"
+      fallback: "PRODUCTO_PRINCIPAL"
+    PROBLEMA_FUNCIONAMIENTO:
+      cross_dimension: "MODELO_DEVICE"
+      cross_label: "device"
+    FLAG_USA_CREDITO:
+      cross_dimension: "PRODUCTO_PRINCIPAL"
+      cross_label: "producto"
+    FLAG_USA_INVERSIONES:
+      cross_dimension: "PRODUCTO_PRINCIPAL"
+      cross_label: "producto"
+    CREDIT_GROUP:
+      cross_dimension: "PRODUCTO_PRINCIPAL"
+      cross_label: "producto"
+    FLAG_TARJETA_CREDITO:
+      cross_dimension: "SEGMENTO"
+      cross_label: "segmento"
+      fallback: "PRODUCTO_PRINCIPAL"
+    FLAG_PRICING:
+      cross_dimension: "PRODUCTO_PRINCIPAL"
+      cross_label: "producto"

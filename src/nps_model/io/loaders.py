@@ -212,7 +212,7 @@ class EnrichmentLoader:
     # Product filters for SEGMENTATION_SELLERS universo queries
     PRODUCT_FILTERS_SEG = {
         "Point": "AND s.POINT_FLAG = 1",
-        "SMBs": "AND s.QR_FLAG = 1",
+        "SMBs": "AND (s.POINT_FLAG = 1 OR s.QR_FLAG = 1 OR s.LINK_FLAG = 1 OR s.API_FLAG = 1)",
         "OP": "AND s.OP_FLAG = 1",
         "LINK": "AND s.LINK_FLAG = 1",
         "APICOW": "AND s.API_FLAG = 1",
@@ -407,6 +407,105 @@ class EnrichmentLoader:
 
         return df
 
+    _RANGO_CASE_MLB = """CASE
+        WHEN LIMITE_OFRECIDO IS NULL OR LIMITE_OFRECIDO <= 0 THEN 'Sin TC'
+        WHEN LIMITE_OFRECIDO <= 500   THEN 'Hasta R$500'
+        WHEN LIMITE_OFRECIDO <= 2000  THEN 'R$500-2K'
+        WHEN LIMITE_OFRECIDO <= 8000  THEN 'R$2K-8K'
+        WHEN LIMITE_OFRECIDO <= 25000 THEN 'R$8K-25K'
+        ELSE '+R$25K'
+    END"""
+    _RANGO_CASE_MLM = """CASE
+        WHEN LIMITE_OFRECIDO IS NULL OR LIMITE_OFRECIDO <= 0 THEN 'Sin TC'
+        WHEN LIMITE_OFRECIDO <= 3000  THEN 'Hasta $3K'
+        WHEN LIMITE_OFRECIDO <= 10000 THEN '$3K-10K'
+        WHEN LIMITE_OFRECIDO <= 30000 THEN '$10K-30K'
+        WHEN LIMITE_OFRECIDO <= 80000 THEN '$30K-80K'
+        ELSE '+$80K'
+    END"""
+    _RANGO_CASE_MLA = """CASE
+        WHEN LIMITE_OFRECIDO IS NULL OR LIMITE_OFRECIDO <= 0 THEN 'Sin TC'
+        WHEN LIMITE_OFRECIDO <= 100000  THEN 'Hasta $100K'
+        WHEN LIMITE_OFRECIDO <= 500000  THEN '$100K-500K'
+        WHEN LIMITE_OFRECIDO <= 1500000 THEN '$500K-1.5M'
+        WHEN LIMITE_OFRECIDO <= 5000000 THEN '$1.5M-5M'
+        ELSE '+$5M'
+    END"""
+    _RANGO_CASE_DEFAULT = _RANGO_CASE_MLB
+
+    def load_tc_limite_universo(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
+        """
+        Carga distribución RANGO_LIMITE_TC + OFERTA_TC sobre universo SEGMENTATION_SELLERS.
+        """
+        print("   💳 Cargando universo TC Límite (base: SEGMENTATION_SELLERS)...")
+        fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
+        fecha_min_month = fecha_minima.replace("-", "")[:6]
+        fecha_max_month = fecha_maxima.replace("-", "")[:6]
+        product_filter = self.PRODUCT_FILTERS_SEG.get(self.update_tipo, "")
+
+        # Pick RANGO CASE based on site
+        site = sites[0] if sites else "MLB"
+        rango_case = {
+            "MLB": self._RANGO_CASE_MLB,
+            "MLM": self._RANGO_CASE_MLM,
+            "MLA": self._RANGO_CASE_MLA,
+        }.get(site, self._RANGO_CASE_DEFAULT)
+
+        params = {
+            "sites": sorted(sites),
+            "fecha_final": fecha_final,
+            "fecha_minima": fecha_minima,
+            "fecha_maxima": fecha_maxima,
+            "fecha_minima_month": fecha_min_month,
+            "fecha_maxima_month": fecha_max_month,
+            "update_tipo": self.update_tipo,
+        }
+        cache_params = {**params, "sql_file": "enrichment_tc_limite_universo.sql"}
+        if self.use_cache and self.cache:
+            df = self.cache.get(cache_params, data_type="tc_limite_universo")
+            if df is not None:
+                print(f"   ✅ tc_limite_universo: cargado desde caché ({len(df):,} filas)")
+                return df
+
+        query_template = self._load_sql_template("enrichment_tc_limite_universo.sql")
+        sites_sql = "('" + "', '".join(sorted(sites)) + "')"
+        query = query_template.format(
+            sites=sites_sql,
+            fecha_minima_month=fecha_min_month,
+            fecha_maxima_month=fecha_max_month,
+            product_filter=product_filter,
+            rango_case=rango_case,
+        )
+
+        print(f"   🔄 Ejecutando query enrichment_tc_limite_universo.sql en BigQuery...")
+        start_time = time.time()
+        df = self.client.query_to_dataframe(query)
+        elapsed = time.time() - start_time
+        print(f"   ⏱️  tc_limite_universo completado en {elapsed:.1f}s ({len(df):,} filas)")
+
+        if self.use_cache and self.cache:
+            self.cache.set(cache_params, df, data_type="tc_limite_universo")
+        return df
+
+    def load_tc_limite(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
+        """
+        Carga límite de TC ofrecido y consumido por seller.
+        Fuente: enrichment_tc_limite.sql (BT_CCARD_CADASTRAL_20).
+        """
+        print("   💳 Cargando datos de Límite TC...")
+        fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
+        fecha_min_month = fecha_minima.replace("-", "")[:6]
+        fecha_max_month = fecha_maxima.replace("-", "")[:6]
+        params = {
+            "sites": sorted(sites),
+            "fecha_final": fecha_final,
+            "fecha_minima": fecha_minima,
+            "fecha_maxima": fecha_maxima,
+            "fecha_minima_month": fecha_min_month,
+            "fecha_maxima_month": fecha_max_month,
+        }
+        return self._query_with_cache("enrichment_tc_limite.sql", params, "enrichment_tc_limite")
+
     def load_transacciones(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
         """
         Carga datos de transacciones (TPV, TPN por producto, rangos).
@@ -564,6 +663,83 @@ class EnrichmentLoader:
 
         return df
 
+    def load_region(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
+        """Carga provincia/region del seller desde KYC."""
+        print("   🌎 Cargando datos de Region...")
+        fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
+        params = {
+            "sites": sorted(sites),
+            "fecha_final": fecha_final,
+            "fecha_minima": fecha_minima,
+            "fecha_maxima": fecha_maxima,
+        }
+        return self._query_with_cache("enrichment_region.sql", params, "enrichment_region")
+
+    def load_pricing(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
+        """Carga datos de pricing por escalas (MLB: via POLITICAS_PRICING, MLA/MLM: via PRODUCT_PRICING)."""
+        print("   💲 Cargando datos de Pricing por escalas...")
+        fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
+
+        # Choose SQL file based on site
+        mlb_sites = {"MLB"}
+        is_mlb = any(s in mlb_sites for s in sites)
+        sql_file = "enrichment_pricing_mlb.sql" if is_mlb else "enrichment_pricing_mla_mlm.sql"
+
+        params = {
+            "sites": sorted(sites),
+            "fecha_final": fecha_final,
+            "fecha_minima": fecha_minima,
+            "fecha_maxima": fecha_maxima,
+        }
+        return self._query_with_cache(sql_file, params, "enrichment_pricing")
+
+    def load_pricing_universo(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
+        """
+        Carga distribución de pricing sobre base SEGMENTATION_SELLERS (universo real).
+        """
+        print("   💲 Cargando universo Pricing (base: SEGMENTATION_SELLERS)...")
+        fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
+        product_filter = self.PRODUCT_FILTERS_SEG.get(self.update_tipo, "")
+
+        mlb_sites = {"MLB"}
+        is_mlb = any(s in mlb_sites for s in sites)
+        sql_file = "enrichment_pricing_universo_mlb.sql" if is_mlb else "enrichment_pricing_universo_mla_mlm.sql"
+
+        params = {
+            "sites": sorted(sites),
+            "fecha_final": fecha_final,
+            "update_tipo": self.update_tipo,
+        }
+
+        cache_params = {**params, "sql_file": sql_file}
+        if self.use_cache and self.cache:
+            df = self.cache.get(cache_params, data_type="pricing_universo")
+            if df is not None:
+                print(f"   ✅ pricing_universo: cargado desde caché ({len(df):,} filas)")
+                return df
+
+        query_template = self._load_sql_template(sql_file)
+        sites_sql = "('" + "', '".join(sorted(sites)) + "')"
+        fecha_min_month = fecha_minima.replace("-", "")[:6]
+        fecha_max_month = fecha_maxima.replace("-", "")[:6]
+        query = query_template.format(
+            sites=sites_sql,
+            fecha_minima_month=fecha_min_month,
+            fecha_maxima_month=fecha_max_month,
+            product_filter=product_filter,
+        )
+
+        print(f"   🔄 Ejecutando query {sql_file} en BigQuery...")
+        start_time = time.time()
+        df = self.client.query_to_dataframe(query)
+        elapsed = time.time() - start_time
+        print(f"   ⏱️  pricing_universo completado en {elapsed:.1f}s ({len(df):,} filas)")
+
+        if self.use_cache and self.cache:
+            self.cache.set(cache_params, df, data_type="pricing_universo")
+
+        return df
+
     def load_segmentacion_universo(self, sites: list[str], fecha_final: str) -> pd.DataFrame:
         """
         Carga distribución de Producto Principal, Newbie/Legacy, Flag Only Transfer
@@ -612,10 +788,7 @@ class EnrichmentLoader:
         Carga tasa de aprobación de pagos por seller para OP (LINK/APICOW).
         Solo se ejecuta cuando update_tipo es LINK o APICOW.
         """
-        if self.update_tipo not in ("LINK", "APICOW"):
-            return pd.DataFrame()
-
-        print("   💳 Cargando tasa de aprobación OP...")
+        print("   💳 Cargando tasa de aprobación...")
         fecha_minima, fecha_maxima = self._calc_date_range(fecha_final)
         params = {
             "sites": sorted(sites),
@@ -632,10 +805,12 @@ class EnrichmentLoader:
 
         query_template = self._load_sql_template("enrichment_aprobacion_op.sql")
         sites_sql = "('" + "', '".join(sorted(sites)) + "')"
+        e_code_filter = self.E_CODE_FILTERS.get(self.update_tipo or "all", "")
         query = query_template.format(
             sites=sites_sql,
             fecha_minima=fecha_minima,
             fecha_maxima=fecha_maxima,
+            e_code_filter=e_code_filter,
         )
 
         print(f"   🔄 Ejecutando query enrichment_aprobacion_op.sql en BigQuery...")

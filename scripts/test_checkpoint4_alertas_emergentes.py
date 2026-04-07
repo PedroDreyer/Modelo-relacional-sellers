@@ -43,17 +43,39 @@ quarter_anterior = config.get('quarter_anterior', '25Q4')
 from nps_model.utils.dates import quarter_fecha_final, quarter_label
 mes_actual = quarter_fecha_final(quarter_actual)
 
+update_tipo = config.get('update', {}).get('tipo', 'all')
+current_fecha_corte = config.get('fecha_corte', None)
+
 print(f"   Site: {site}")
 print(f"   Comparación: {quarter_label(quarter_anterior)} vs {quarter_label(quarter_actual)}")
+
+# ==========================================
+# PASO 1B: Validate CP4 cache
+# ==========================================
+data_dir = project_root / 'data'
+outputs_dir = project_root / 'outputs'
+
+cp4_output = data_dir / f'checkpoint4_alertas_emergentes_{site}_{mes_actual}.json'
+if cp4_output.exists():
+    try:
+        with open(cp4_output, 'r', encoding='utf-8') as f:
+            cached = json.load(f)
+        cached_ut = cached.get('metadata', {}).get('update_tipo', 'unknown')
+        cached_fc = cached.get('metadata', {}).get('fecha_corte', None)
+        if cached_ut == update_tipo and cached_fc == current_fecha_corte:
+            print(f"\n✅ CHECKPOINT 4 YA EXISTE - USANDO CACHE (update: {update_tipo})")
+            sys.exit(0)
+        else:
+            print(f"\n   ⚠️  Cache CP4 INVÁLIDO: update_tipo o fecha_corte cambió")
+            cp4_output.unlink(missing_ok=True)
+    except (json.JSONDecodeError, OSError):
+        cp4_output.unlink(missing_ok=True)
 
 # ==========================================
 # PASO 2: Cargar checkpoint1 (unico checkpoint necesario)
 # ==========================================
 
 print("\n\U0001f4c2 Paso 2: Cargando checkpoint previo...")
-
-data_dir = project_root / 'data'
-outputs_dir = project_root / 'outputs'
 
 def encontrar_archivo(nombre_archivo):
     """Busca archivo en data/ primero, luego en outputs/"""
@@ -127,6 +149,9 @@ data_dir.mkdir(exist_ok=True)
 output_path = data_dir / f'checkpoint4_alertas_emergentes_{site}_{mes_actual}.json'
 
 try:
+    # Inject update_tipo and fecha_corte into metadata for cache validation
+    alertas_resultados.setdefault('metadata', {})['update_tipo'] = update_tipo
+    alertas_resultados['metadata']['fecha_corte'] = current_fecha_corte
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(alertas_resultados, f, indent=2, ensure_ascii=False)
     print(f"   \u2705 Guardado: {output_path.name}")

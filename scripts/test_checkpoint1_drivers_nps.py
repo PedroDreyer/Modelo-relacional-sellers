@@ -65,8 +65,15 @@ def main():
             with open(output_path_check, 'r', encoding='utf-8') as f:
                 cached_data = json.load(f)
             cached_update = cached_data.get('update_tipo', 'unknown')
+            cached_fecha_corte = cached_data.get('fecha_corte', None)
+            current_fecha_corte = config.get('fecha_corte', None)
             if cached_update != update_tipo:
                 print(f"\n   \u26a0\ufe0f  Cache INVÁLIDO: update_tipo cambió ({cached_update} → {update_tipo})")
+                print(f"   \U0001f5d1\ufe0f  Eliminando cache obsoleto...")
+                output_path_check.unlink(missing_ok=True)
+                cache_valid = False
+            elif cached_fecha_corte != current_fecha_corte:
+                print(f"\n   \u26a0\ufe0f  Cache INVÁLIDO: fecha_corte cambió ({cached_fecha_corte} → {current_fecha_corte})")
                 print(f"   \U0001f5d1\ufe0f  Eliminando cache obsoleto...")
                 output_path_check.unlink(missing_ok=True)
                 cache_valid = False
@@ -108,7 +115,15 @@ def main():
     # 2. Filtrar por site
     df_filtered = df_encuestas[df_encuestas['SITE'] == site].copy()
     print(f"\n   \u2705 Datos filtrados para {site}: {len(df_filtered):,} registros")
-    
+
+    # Aplicar fecha de corte si configurada
+    fecha_corte = config.get('fecha_corte')
+    if fecha_corte and 'END_DATE' in df_filtered.columns:
+        df_filtered['END_DATE'] = pd.to_datetime(df_filtered['END_DATE'], utc=True)
+        antes = len(df_filtered)
+        df_filtered = df_filtered[df_filtered['END_DATE'] <= pd.Timestamp(fecha_corte, tz='UTC')]
+        print(f"   📆 Fecha de corte: {fecha_corte} ({antes - len(df_filtered):,} registros excluidos)")
+
     # Apply update-based filtering
     update_tipo = config.get('update', {}).get('tipo', 'all')
     if update_tipo != 'all':
@@ -123,7 +138,58 @@ def main():
 
     # Normalizar motivos (agrupar Seguridad y Falta de seguridad en "Seguridad")
     df_filtered = normalizar_motivo_col(df_filtered)
-    
+
+    # MODELO_DEVICE: intersección de BQ MODELO_DEVICE + DEVICE_DECLARADO (mapping analista).
+    if "DEVICE_DECLARADO" in df_filtered.columns:
+        _DEVICE_MAP_BY_SITE = {
+            "MLB": {
+                "point mini": "mPOS", "point mini com nfc": "mPOS",
+                "point air": "POS", "point mini chip": "POS",
+                "point pro": "POS", "point pro 2": "POS", "point 3": "POS",
+                "point smart": "Smart", "point smart 2": "Smart",
+                "point tap": "Tap",
+            },
+            "MLM": {
+                "point blue": "mPOS",
+                "point smart": "Smart", "point smart 2": "Smart",
+            },
+            "MLA": {
+                "point smart": "Smart", "point smart 2": "Smart",
+            },
+            "MLC": {
+                "point smart": "Smart", "point smart 2": "Smart",
+                "smart redelcom": "Smart",
+            },
+        }
+        import re as _re
+        _dev_map = _DEVICE_MAP_BY_SITE.get(site, {})
+        def _map_device_dd(val):
+            if pd.isna(val):
+                return None
+            low = _re.sub(r'\s*\(.*', '', str(val).lower().strip()).strip()
+            if low in _dev_map:
+                return _dev_map[low]
+            for pattern, device_type in sorted(_dev_map.items(), key=lambda x: -len(x[0])):
+                if low.startswith(pattern):
+                    return device_type
+            return None
+        _dd_device = df_filtered["DEVICE_DECLARADO"].apply(_map_device_dd)
+        _bq_device = df_filtered.get("MODELO_DEVICE")
+        if _bq_device is not None:
+            df_filtered["MODELO_DEVICE"] = _dd_device.where(
+                (_bq_device.isna()) | (_dd_device == _bq_device), other=None
+            )
+        else:
+            df_filtered["MODELO_DEVICE"] = _dd_device
+
+    # Tap: usa PDF_POINT_TAP en vez de PROBLEMA_FUNCIONAMIENTO.
+    if "PDF_POINT_TAP" in df_filtered.columns and "PROBLEMA_FUNCIONAMIENTO" in df_filtered.columns:
+        _is_tap = df_filtered.get("MODELO_DEVICE") == "Tap"
+        if _is_tap is not None and _is_tap.any():
+            df_filtered.loc[_is_tap, "PROBLEMA_FUNCIONAMIENTO"] = df_filtered.loc[_is_tap, "PDF_POINT_TAP"]
+            if "TIPO_PDF_POINT_TAP" in df_filtered.columns:
+                df_filtered.loc[_is_tap, "TIPO_PROBLEMA"] = df_filtered.loc[_is_tap, "TIPO_PDF_POINT_TAP"]
+
     # 3. Determinar meses a analizar (ultimos 7 meses hasta fecha_final + mes YoY)
     meses_disponibles = sorted(df_filtered['END_DATE_MONTH'].unique())
     meses_disponibles = [m for m in meses_disponibles if m <= fecha_final]
@@ -149,7 +215,8 @@ def main():
             meses_para_analisis = [m_yoy] + meses_para_analisis
     meses_para_analisis = sorted(meses_para_analisis)
     
-    mes_actual = fecha_final
+    # Use actual last month with data (respects fecha_corte), not quarter definition
+    mes_actual = meses_disponibles[-1] if meses_disponibles else fecha_final
     mes_anterior = meses_para_analisis[-2] if len(meses_para_analisis) >= 2 else mes_actual
     
     print(f"\n   Meses a analizar: {meses_para_analisis}")
@@ -299,67 +366,85 @@ def main():
     
     # 6b. Drill-down: cross-dimension NPS (Nivel 2)
     drill_down_config = config.get('drill_down', {}).get(update_tipo, {})
-    cross_col = drill_down_config.get('cross_dimension')
-    cross_label = drill_down_config.get('cross_label', '')
+    default_cross_col = drill_down_config.get('cross_dimension')
+    default_cross_label = drill_down_config.get('cross_label', '')
+    per_dim_config = config.get('drill_down', {}).get('per_dimension', {})
     drill_down_results = {}
 
-    if cross_col and cross_col in df_filtered.columns:
-        # For each dimension that has data, calculate NPS by (dim_value × cross_col)
-        mapeo_config = config.get('mapeo_motivo_dimension', [])
-        dims_to_drill = set()
-        for entry in mapeo_config:
-            dk = entry.get('dimension_key')
-            if dk and dk in resultado_dimensiones:
-                dims_to_drill.add(dk)
+    # For each dimension that has data, calculate NPS by (dim_value × cross_col)
+    mapeo_config = config.get('mapeo_motivo_dimension', [])
+    dims_to_drill = set()
+    for entry in mapeo_config:
+        dk = entry.get('dimension_key')
+        if dk and dk in resultado_dimensiones:
+            dims_to_drill.add(dk)
 
-        for dim_key in dims_to_drill:
-            dim_data = resultado_dimensiones[dim_key]
-            drill_for_dim = {}
+    for dim_key in dims_to_drill:
+        # Per-dimension cross override
+        dim_override = per_dim_config.get(dim_key, {})
+        cross_col = dim_override.get('cross_dimension', default_cross_col)
+        cross_label = dim_override.get('cross_label', default_cross_label)
+        fallback_col = dim_override.get('fallback')
 
-            for item in dim_data:
-                dim_val = item.get("dimension")
-                if dim_val is None:
+        # Check if cross column exists; try fallback
+        if not cross_col or cross_col not in df_filtered.columns:
+            if fallback_col and fallback_col in df_filtered.columns:
+                cross_col = fallback_col
+                cross_label = default_cross_label
+            elif default_cross_col and default_cross_col in df_filtered.columns:
+                cross_col = default_cross_col
+                cross_label = default_cross_label
+            else:
+                continue
+
+        dim_data = resultado_dimensiones[dim_key]
+        drill_for_dim = {}
+
+        for item in dim_data:
+            dim_val = item.get("dimension")
+            if dim_val is None:
+                continue
+            # Filter to this dim value
+            df_sub = df_filtered[df_filtered[dim_key] == dim_val].dropna(subset=[cross_col])
+            if len(df_sub) < 30:
+                continue
+
+            cross_vals = df_sub[cross_col].unique()
+            cross_items = []
+            for cv in cross_vals:
+                df_cv_q_act = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_act))]
+                df_cv_q_ant = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_ant))]
+                n_act = len(df_cv_q_act)
+                n_ant = len(df_cv_q_ant)
+                if n_act < 10:
                     continue
-                # Filter to this dim value
-                df_sub = df_filtered[df_filtered[dim_key] == dim_val].dropna(subset=[cross_col])
-                if len(df_sub) < 30:
-                    continue
+                nps_act = round(df_cv_q_act["NPS"].mean() * 100, 1)
+                nps_ant = round(df_cv_q_ant["NPS"].mean() * 100, 1) if n_ant >= 10 else None
+                share_act = round(n_act / len(df_sub[df_sub["END_DATE_MONTH"].isin(meses_q_act)]) * 100, 1)
+                cross_items.append({
+                    "cross_value": str(cv),
+                    "nps_q_actual": nps_act,
+                    "nps_q_anterior": nps_ant,
+                    "nps_var": round(nps_act - nps_ant, 1) if nps_ant is not None else None,
+                    "share": share_act,
+                    "n": n_act,
+                })
 
-                cross_vals = df_sub[cross_col].unique()
-                cross_items = []
-                for cv in cross_vals:
-                    df_cv_q_act = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_act))]
-                    df_cv_q_ant = df_sub[(df_sub[cross_col] == cv) & (df_sub["END_DATE_MONTH"].isin(meses_q_ant))]
-                    n_act = len(df_cv_q_act)
-                    n_ant = len(df_cv_q_ant)
-                    if n_act < 10:
-                        continue
-                    nps_act = round(df_cv_q_act["NPS"].mean() * 100, 1)
-                    nps_ant = round(df_cv_q_ant["NPS"].mean() * 100, 1) if n_ant >= 10 else None
-                    share_act = round(n_act / len(df_sub[df_sub["END_DATE_MONTH"].isin(meses_q_act)]) * 100, 1)
-                    cross_items.append({
-                        "cross_value": str(cv),
-                        "nps_q_actual": nps_act,
-                        "nps_q_anterior": nps_ant,
-                        "nps_var": round(nps_act - nps_ant, 1) if nps_ant is not None else None,
-                        "share": share_act,
-                        "n": n_act,
-                    })
+            if cross_items:
+                # Sort by absolute NPS variation (biggest mover first)
+                cross_items.sort(key=lambda x: abs(x.get("nps_var") or 0), reverse=True)
+                drill_for_dim[str(dim_val)] = cross_items
 
-                if cross_items:
-                    # Sort by absolute NPS variation (biggest mover first)
-                    cross_items.sort(key=lambda x: abs(x.get("nps_var") or 0), reverse=True)
-                    drill_for_dim[str(dim_val)] = cross_items
+        if drill_for_dim:
+            drill_down_results[dim_key] = {
+                "cross_dimension": cross_col,
+                "cross_label": cross_label,
+                "by_value": drill_for_dim,
+            }
 
-            if drill_for_dim:
-                drill_down_results[dim_key] = {
-                    "cross_dimension": cross_col,
-                    "cross_label": cross_label,
-                    "by_value": drill_for_dim,
-                }
-
-        if drill_down_results:
-            print(f"\n   📊 Drill-down calculado: {list(drill_down_results.keys())} × {cross_col}")
+    if drill_down_results:
+        dims_summary = [f"{k}×{drill_down_results[k]['cross_dimension']}" for k in drill_down_results]
+        print(f"\n   📊 Drill-down calculado: {', '.join(dims_summary)}")
 
     # 7. Mostrar resultados
     print("\n" + "="*80)
@@ -393,6 +478,7 @@ def main():
         "mes_anterior": mes_anterior,
         "mes_yoy": mes_yoy,
         "update_tipo": update_tipo,
+        "fecha_corte": config.get('fecha_corte', None),
         "meses_disponibles": meses_para_analisis,
         "drivers": resultado,
         "dimensiones": resultado_dimensiones if resultado_dimensiones else {},

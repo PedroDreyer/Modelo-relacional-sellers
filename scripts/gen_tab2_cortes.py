@@ -92,11 +92,22 @@ def _build_unified_table(
         "Usa inversiones": 0, "No usa inversiones": 1,
         "Usa credito": 0, "No usa credito": 1,
         "Tiene TC MP": 0, "Sin TC MP": 1,
+        "Con oferta TC": 0, "Sin oferta TC": 1,
+        "Sin límite": 0,
         "Con Top Off": 0, "Sin Top Off": 1,
         "Con uso Point": 0, "Sin uso Point": 1, "Sin dato": 2,
         "Legacy": 0, "Newbie": 1,
+        # Escalas: mayor número = mejor → ordenar descendente
+        "Escala 10": 0, "Escala 8": 1, "Escala 7": 2, "Escala 6": 3,
+        "Escala 5": 4, "Escala 4": 5, "Escala 3": 6, "Escala 2": 7, "Escala 1": 8,
+        "Sin escala": 9,
+        "Con pricing escalas": 0, "Sin pricing escalas": 1,
     }
     sorted_list = sorted(dim_list, key=lambda x: CUSTOM_ORDER.get(x.get("dimension", ""), 99))
+
+    # For high-cardinality dimensions (>8 values), filter out rows with negligible share
+    MIN_SHARE_THRESHOLD = 0.5  # % — suppress rows below this in BOTH quarters
+    high_cardinality = len(sorted_list) > 8
 
     for item in sorted_list:
         dv = item.get("dimension", "N/A")
@@ -117,6 +128,12 @@ def _build_unified_table(
         sh_vals_act = [shares_mes.get(m) for m in meses_q_act if shares_mes.get(m) is not None]
         sha = sum(sh_vals_ant) / len(sh_vals_ant) if sh_vals_ant else None
         shb = sum(sh_vals_act) / len(sh_vals_act) if sh_vals_act else None
+
+        # Skip negligible rows in high-cardinality dimensions
+        if high_cardinality:
+            max_share = max(sha or 0, shb or 0)
+            if max_share < MIN_SHARE_THRESHOLD:
+                continue
 
         vn = (nb - na) if (na is not None and nb is not None) else None
         dsh = (shb - sha) if (sha is not None and shb is not None) else None
@@ -178,15 +195,15 @@ def _build_assoc_box(asoc: dict) -> str:
 
 MOTIVO_DIM_MAP = {
     "credito": {
-        "dims": ["CREDIT_GROUP", "FLAG_USA_CREDITO", "FLAG_TARJETA_CREDITO", "ESTADO_OFERTA_CREDITO"],
+        "dims": ["CREDIT_GROUP", "FLAG_USA_CREDITO", "ESTADO_OFERTA_CREDITO", "OFERTA_TC", "FLAG_TARJETA_CREDITO", "RANGO_LIMITE_TC"],
         "label": "Créditos & Financiamiento",
-        "source": "LK_MP_MAUS_CREDIT_PROFILE",
+        "source": "LK_MP_MAUS_CREDIT_PROFILE + BT_CCARD_CADASTRAL",
         "has_real": True,
     },
     "tasas": {
-        "dims": ["RANGO_TPV", "RANGO_TPN"],
+        "dims": ["FLAG_PRICING", "SCALE_LEVEL", "RANGO_TPV", "RANGO_TPN"],
         "label": "Pricing / Escalas",
-        "source": "LK_MP_MASTER_SELLERS",
+        "source": "LK_POLITICAS_PRICING_DIARIO + LK_MP_PRODUCT_PRICING_SCALE",
         "has_real": True,
     },
     "inversiones": {
@@ -196,7 +213,7 @@ MOTIVO_DIM_MAP = {
         "has_real": True,
     },
     "calidad": {
-        "dims": ["PROBLEMA_FUNCIONAMIENTO", "TIPO_PROBLEMA"],
+        "dims": ["PROBLEMA_FUNCIONAMIENTO", "TIPO_PROBLEMA", "MODELO_DEVICE"],
         "label": "Problemas de funcionamiento",
         "source": "BT_NPS_TX_SELLERS_MP_DETAIL",
         "has_real": False,
@@ -243,6 +260,8 @@ DIM_LABELS = {
     "CREDIT_GROUP": "FRED",
     "FLAG_USA_CREDITO": "Uso de Crédito",
     "FLAG_TARJETA_CREDITO": "Tarjeta de Crédito MP",
+    "OFERTA_TC": "Oferta de TC",
+    "RANGO_LIMITE_TC": "Límite TC Ofrecido",
     "ESTADO_OFERTA_CREDITO": "Estado Oferta Crédito",
     "RANGO_TPV": "RANGO_TPV (USD)",
     "RANGO_TPN": "RANGO_TPN (transacciones)",
@@ -251,10 +270,13 @@ DIM_LABELS = {
     "FLAG_ASSET": "FLAG_ASSET (Cuenta Remunerada)",
     "FLAG_WINNER": "FLAG_WINNER (Rendimiento PLUS)",
     "FLAG_POTS_ACTIVO": "FLAG_POTS_ACTIVO",
-    "PROBLEMA_FUNCIONAMIENTO": "Problema Funcionamiento",
+    "PROBLEMA_FUNCIONAMIENTO": "Problema Funcionamiento (Si/No)",
     "TIPO_PROBLEMA": "Tipo de Problema",
+    "MODELO_DEVICE": "Modelo Device (POS/Smart/mPOS/Tap)",
     "FLAG_TOPOFF": "FLAG_TOPOFF",
     "RANGO_APROBACION": "Rango Aprobación",
+    "FLAG_PRICING": "Pricing por Escalas",
+    "SCALE_LEVEL": "Nivel de Escala",
     "SEGMENTO_TAMANO_SELLER": "Segmento (SMB / Longtail)",
     "NEWBIE_LEGACY": "Newbie / Legacy",
     "PF_PJ": "Persona (PF / PJ)",
@@ -361,7 +383,11 @@ def generar_tab2(
     </summary>
     <div style="padding:8px 0 16px;">
 """
+        # RANGO_LIMITE_TC se anida dentro de FLAG_TARJETA_CREDITO (uso TC)
+        TC_NESTED = {"RANGO_LIMITE_TC"}
         for dim_key in cfg.get("dims", []):
+            if dim_key in TC_NESTED:
+                continue  # rendered nested inside TC block
             if dim_key in seen_dims:
                 continue
             seen_dims.add(dim_key)
@@ -377,6 +403,22 @@ def generar_tab2(
                 q_yoy=q_label_yoy,
                 meses_q_yoy=meses_q_yoy,
             )
+            # After FLAG_TARJETA_CREDITO (uso TC): nest RANGO_LIMITE_TC
+            if dim_key == "FLAG_TARJETA_CREDITO":
+                seen_dims.add("RANGO_LIMITE_TC")
+                nested_data = dimensiones_ch1.get("RANGO_LIMITE_TC", [])
+                if nested_data:
+                    nested_lbl = DIM_LABELS.get("RANGO_LIMITE_TC", "Límite TC Ofrecido")
+                    nested_table = _build_unified_table(
+                        nested_data, nested_lbl, q_label_ant, q_label_act,
+                        meses_q_ant, meses_q_act,
+                        has_real=cfg.get("has_real", False),
+                        source_label=cfg.get("source", ""),
+                        q_yoy=q_label_yoy,
+                        meses_q_yoy=meses_q_yoy,
+                    )
+                    if nested_table:
+                        html += f'<div style="margin-left:24px;border-left:3px solid #e0e0e0;padding-left:12px;">{nested_table}</div>\n'
 
         # Association box
         for a in asocs:

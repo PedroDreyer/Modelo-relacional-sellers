@@ -18,15 +18,18 @@ from .constants import MOTIVO_NORMALIZACION_SEGURIDAD
 # El orden importa: la primera coincidencia gana.
 # Cubre portugués (BR), español (AR/MX/CL) y variantes de wording viejo/nuevo.
 
+# Consolidation: merge old+new wording into consistent categories.
+# This ensures evolution charts are comparable across quarters (wording changed ~Sep-Oct 2025).
+# Top 12 ensures enough detail for all motivos to appear.
 MOTIVO_CONSOLIDACION_PATRONES = [
     # --- Atención al cliente ---
-    ("atendimento ao cliente", "Atención al cliente"),
-    ("atención al cliente", "Atención al cliente"),
-    ("atencion al cliente", "Atención al cliente"),
+    ("atendimento ao cliente", "Atendimento ao cliente"),
+    ("atención al cliente", "Atendimento ao cliente"),
+    ("atencion al cliente", "Atendimento ao cliente"),
     # --- Cobro en cuotas / Parcelamento ---
-    ("falta de parcelamento", "Cobro en cuotas"),
-    ("parcelamento sem juros", "Cobro en cuotas"),
-    ("vendas parceladas", "Cobro en cuotas"),
+    ("falta de parcelamento", "Falta de parcelamento sem juros"),
+    ("parcelamento sem juros", "Falta de parcelamento sem juros"),
+    ("vendas parceladas", "Falta de parcelamento sem juros"),
     ("cobro en cuotas", "Cobro en cuotas"),
     ("cobros en cuotas", "Cobro en cuotas"),
     ("cobros a meses", "Cobro en cuotas"),
@@ -35,75 +38,74 @@ MOTIVO_CONSOLIDACION_PATRONES = [
     ("meses sin interés", "Cobro en cuotas"),
     ("meses sin interes", "Cobro en cuotas"),
     ("falta de cuotas", "Cobro en cuotas"),
-    # --- Cobros rechazados / Pagamentos recusados ---
-    ("pagamentos recusados", "Cobros rechazados"),
-    ("cobros rechazados", "Cobros rechazados"),
-    # --- Comisiones y cargos / Taxas ---
-    ("taxas e comissões por venda", "Comisiones y cargos"),
-    ("taxas e comissoes por venda", "Comisiones y cargos"),
-    ("comissões por venda", "Comisiones y cargos"),
-    ("taxas e custos", "Comisiones y cargos"),
-    ("taxas e comissões", "Comisiones y cargos"),
-    ("comisiones y cargos", "Comisiones y cargos"),
-    ("comisiones por venta", "Comisiones y cargos"),
-    ("comisiones y cargos de venta", "Comisiones y cargos"),
-    # --- Contracargos ---
-    ("operações contestadas", "Contracargos"),
-    ("operaciones contestadas", "Contracargos"),
-    ("contracargos", "Contracargos"),
-    # --- Crédito ---
-    ("empréstimo ou cartão de crédito", "Crédito"),
-    ("emprestimo ou cartao de credito", "Crédito"),
-    ("empréstimo o tarjeta de crédito", "Crédito"),
-    ("crédito", "Crédito"),
-    ("credito", "Crédito"),
-    # --- Seguridad ---
-    ("falta de segurança da conta", "Falta de seguridad en la cuenta"),
-    ("falta de seguridad de la cuenta", "Falta de seguridad en la cuenta"),
-    ("falta de seguridad en la cuenta", "Falta de seguridad en la cuenta"),
-    ("segurança da conta", "Falta de seguridad en la cuenta"),
-    ("seguridad de la cuenta", "Falta de seguridad en la cuenta"),
-    # --- Inversiones ---
-    ("investimentos e retornos", "Inversiones y rendimiento de dinero en cuenta"),
-    ("inversiones y rendimiento", "Inversiones y rendimiento de dinero en cuenta"),
-    # --- Plazo de disponibilidad ---
-    ("prazo para disponibilização", "Plazo de disponibilidad del dinero"),
-    ("prazo para disponibilizacao", "Plazo de disponibilidad del dinero"),
-    ("plazo de disponibilidad", "Plazo de disponibilidad del dinero"),
-    # --- Problemas con funcionalidades ---
-    ("problemas com as funcionalidades", "Problemas con las funcionalidades de la cuenta"),
-    ("problemas con las funcionalidades", "Problemas con las funcionalidades de la cuenta"),
-    ("problemas de funcionamiento", "Problemas con las funcionalidades de la cuenta"),
-    # --- Calidad device (Point-specific) ---
-    ("qualidade e funcionamento da maquininha", "Calidad y funcionamiento del dispositivo"),
-    ("qualidade e dificuldade de uso da maquininha", "Calidad y funcionamiento del dispositivo"),
-    ("qualidade e facilidade de uso da maquininha", "Calidad y funcionamiento del dispositivo"),
-    ("calidad y facilidad de uso del dispositivo", "Calidad y funcionamiento del dispositivo"),
-    ("calidad y dificultad de uso del dispositivo", "Calidad y funcionamiento del dispositivo"),
-    ("calidad del dispositivo", "Calidad y funcionamiento del dispositivo"),
-    ("calidad y funcionamiento", "Calidad y funcionamiento del dispositivo"),
-    # --- Servicios adicionales (MLC-specific) ---
-    ("servicios adicionales", "Servicios adicionales"),
-    ("serviços adicionais", "Servicios adicionales"),
-    # --- Problemas funcionamiento herramienta ---
-    ("problemas no funcionamento da ferramenta", "Problemas con las funcionalidades de la cuenta"),
-    ("problemas en el funcionamiento de la herramienta", "Problemas con las funcionalidades de la cuenta"),
-    # --- Integración ---
-    ("dificuldade para integrar", "Otros"),
-    ("dificultad para integrar", "Otros"),
-    # --- Funcionalidades de la cuenta ---
-    ("funcionalidades da conta", "Funcionalidades de la cuenta MP"),
-    ("funcionalidades de la cuenta", "Funcionalidades de la cuenta MP"),
-    # --- Medios de pago ---
-    ("meios de pagamento", "Medios de pago disponibles"),
-    ("medios de pagos disponibles", "Medios de pago disponibles"),
-    ("medios de pago disponibles", "Medios de pago disponibles"),
-    # --- Aprobación de pagos ---
-    ("aprovação de pagamentos", "Aprobación de pagos"),
-    ("aprobación de pagos", "Aprobación de pagos"),
-    # --- Cuotas sin interés ---
     ("cuotas sin interés", "Cobro en cuotas"),
     ("cuotas sin interes", "Cobro en cuotas"),
+    # --- Cobros rechazados / Pagamentos recusados ---
+    ("pagamentos recusados", "Pagamentos recusados"),
+    ("cobros rechazados", "Pagamentos recusados"),
+    # --- Comisiones y cargos / Taxas (merge new→old wording: "Taxas e custos") ---
+    ("taxas e comissões por venda", "Taxas e custos"),
+    ("taxas e comissoes por venda", "Taxas e custos"),
+    ("comissões por venda", "Taxas e custos"),
+    ("taxas e custos", "Taxas e custos"),
+    ("taxas e comissões", "Taxas e custos"),
+    ("comisiones y cargos", "Taxas e custos"),
+    ("comisiones por venta", "Taxas e custos"),
+    ("comisiones y cargos de venta", "Taxas e custos"),
+    # --- Contracargos / Operações contestadas ---
+    ("operações contestadas", "Operações contestadas"),
+    ("operaciones contestadas", "Operações contestadas"),
+    ("contracargos", "Operações contestadas"),
+    # --- Crédito ---
+    ("empréstimo ou cartão de crédito", "Empréstimo ou cartão de crédito"),
+    ("emprestimo ou cartao de credito", "Empréstimo ou cartão de crédito"),
+    ("empréstimo o tarjeta de crédito", "Empréstimo ou cartão de crédito"),
+    ("préstamos y tarjeta de crédito", "Empréstimo ou cartão de crédito"),
+    ("crédito", "Empréstimo ou cartão de crédito"),
+    ("credito", "Empréstimo ou cartão de crédito"),
+    # --- Seguridad ---
+    ("falta de segurança da conta", "Falta de segurança da conta"),
+    ("segurança da conta", "Falta de segurança da conta"),
+    ("falta de seguridad de la cuenta", "Falta de segurança da conta"),
+    ("falta de seguridad en la cuenta", "Falta de segurança da conta"),
+    ("seguridad de la cuenta", "Falta de segurança da conta"),
+    # --- Inversiones ---
+    ("investimentos e retornos", "Investimentos e retornos baixos com dinheiro em conta"),
+    ("inversiones y rendimiento", "Investimentos e retornos baixos com dinheiro em conta"),
+    # --- Plazo de disponibilidad ---
+    ("prazo para disponibilização", "Prazo para disponibilização do dinheiro"),
+    ("prazo para disponibilizacao", "Prazo para disponibilização do dinheiro"),
+    ("plazo de disponibilidad", "Prazo para disponibilização do dinheiro"),
+    # --- Problemas con funcionalidades ---
+    ("problemas com as funcionalidades", "Problemas com as funcionalidades da conta"),
+    ("problemas con las funcionalidades", "Problemas com as funcionalidades da conta"),
+    ("problemas de funcionamiento", "Problemas com as funcionalidades da conta"),
+    ("problemas no funcionamento da ferramenta", "Problemas com as funcionalidades da conta"),
+    ("problemas en el funcionamiento de la herramienta", "Problemas com as funcionalidades da conta"),
+    # --- Calidad device (merge new→old: "Qualidade e funcionamento") ---
+    ("qualidade e funcionamento da maquininha", "Qualidade e funcionamento da maquininha"),
+    ("qualidade e dificuldade de uso da maquininha", "Qualidade e funcionamento da maquininha"),
+    ("qualidade e facilidade de uso da maquininha", "Qualidade e funcionamento da maquininha"),
+    ("calidad y facilidad de uso del dispositivo", "Qualidade e funcionamento da maquininha"),
+    ("calidad y dificultad de uso del dispositivo", "Qualidade e funcionamento da maquininha"),
+    ("calidad del dispositivo", "Qualidade e funcionamento da maquininha"),
+    ("calidad y funcionamiento", "Qualidade e funcionamento da maquininha"),
+    # --- Funcionalidades de la cuenta MP ---
+    ("funcionalidades da conta", "Funcionalidades da conta MP"),
+    ("funcionalidades de la cuenta", "Funcionalidades da conta MP"),
+    # --- Servicios adicionales ---
+    ("servicios adicionales", "Servicios adicionales"),
+    ("serviços adicionais", "Servicios adicionales"),
+    # --- Medios de pago ---
+    ("meios de pagamento", "Meios de pagamento disponíveis"),
+    ("medios de pagos disponibles", "Meios de pagamento disponíveis"),
+    ("medios de pago disponibles", "Meios de pagamento disponíveis"),
+    # --- Aprobación ---
+    ("aprovação de pagamentos", "Aprovação de pagamentos"),
+    ("aprobación de pagos", "Aprovação de pagamentos"),
+    # --- Integración → Otros ---
+    ("dificuldade para integrar", "Otros"),
+    ("dificultad para integrar", "Otros"),
     # --- Otros ---
     ("outro - por favor", "Otros"),
     ("otro - por favor", "Otros"),

@@ -17,7 +17,7 @@ def preparar_comentarios_para_analisis(
     df_nps: pd.DataFrame,
     mes_actual: str,
     motivos_excluir: List[str] = None,
-    max_comentarios: int = 100,
+    max_comentarios: int = 500,
     motivo_col: str = "MOTIVO",
     comment_col: str = "COMMENTS",
 ) -> Dict[str, Dict]:
@@ -56,8 +56,11 @@ def preparar_comentarios_para_analisis(
             'comentarios_por_motivo': {}
         }
     
-    # Filtrar mes actual
-    df_mes = df_nps[df_nps['END_DATE_MONTH'] == mes_actual].copy()
+    # Filtrar meses: acepta un solo mes o una lista de meses (para quarter completo)
+    if isinstance(mes_actual, (list, tuple)):
+        df_mes = df_nps[df_nps['END_DATE_MONTH'].isin(mes_actual)].copy()
+    else:
+        df_mes = df_nps[df_nps['END_DATE_MONTH'] == mes_actual].copy()
     
     # Obtener motivos disponibles
     motivos_disponibles = df_mes[motivo_col].dropna().unique()
@@ -79,38 +82,56 @@ def preparar_comentarios_para_analisis(
         comentarios_detractores = 0
         comentarios_neutros = 0
         
+        # Dimension columns to include as tags on each comment
+        _DIM_COLS = [
+            "PRODUCTO_PRINCIPAL", "SEGMENTO", "NEWBIE_LEGACY",
+            "FLAG_USA_CREDITO", "FLAG_TARJETA_CREDITO",
+            "FLAG_USA_INVERSIONES", "FLAG_TOPOFF", "FLAG_PRICING",
+            "MODELO_DEVICE", "OFERTA_TC",
+        ]
+
+        def _extract_dims(row):
+            d = {}
+            for col in _DIM_COLS:
+                v = row.get(col)
+                if pd.notna(v) and str(v) not in ("", "Sin dato", "nan"):
+                    d[col] = str(v)
+            return d
+
         # Buscar en detractores
         for _, row in detractores.iterrows():
             if len(comentarios) >= max_comentarios:
                 break
-            
+
             comentario = row.get(comment_col, '')
             if pd.notna(comentario) and str(comentario).strip() != '':
                 cust_id = row.get('CUST_ID', 'N/A')
                 cust_id = str(cust_id) if pd.notna(cust_id) else 'N/A'
-                
+
                 comentarios.append({
                     'comentario': str(comentario).strip(),
                     'cust_id': cust_id,
-                    'nps': int(row.get('NPS', 0))
+                    'nps': int(row.get('NPS', 0)),
+                    'dims': _extract_dims(row),
                 })
                 comentarios_detractores += 1
-        
+
         # Completar con neutros si hace falta
         if len(comentarios) < max_comentarios:
             for _, row in neutros.iterrows():
                 if len(comentarios) >= max_comentarios:
                     break
-                
+
                 comentario = row.get(comment_col, '')
                 if pd.notna(comentario) and str(comentario).strip() != '':
                     cust_id = row.get('CUST_ID', 'N/A')
                     cust_id = str(cust_id) if pd.notna(cust_id) else 'N/A'
-                    
+
                     comentarios.append({
                         'comentario': str(comentario).strip(),
                         'cust_id': cust_id,
-                        'nps': int(row.get('NPS', 0))
+                        'nps': int(row.get('NPS', 0)),
+                        'dims': _extract_dims(row),
                     })
                     comentarios_neutros += 1
         
@@ -136,6 +157,160 @@ def preparar_comentarios_para_analisis(
         },
         'comentarios_por_motivo': comentarios_por_motivo
     }
+
+
+def preparar_comentarios_promotores(
+    df_nps: pd.DataFrame,
+    mes_actual,
+    motivos_excluir: List[str] = None,
+    max_comentarios: int = 300,
+    motivo_col: str = "PROMOTION_REASON_NPS",
+    comment_col: str = "COMMENTS",
+) -> Dict[str, Dict]:
+    """Prepara comentarios de PROMOTORES por motivo para análisis cualitativo."""
+    if motivos_excluir is None:
+        motivos_excluir = ['Sin información', 'Outro - Por favor, especifique', 'Otro - Por favor, especifique']
+
+    tiene_comentarios = comment_col in df_nps.columns and motivo_col in df_nps.columns
+    if not tiene_comentarios:
+        return {'metadata': {'total_motivos_analizados': 0}, 'comentarios_por_motivo': {}}
+
+    # Filter by months and promoters only
+    if isinstance(mes_actual, (list, tuple)):
+        df_mes = df_nps[df_nps['END_DATE_MONTH'].isin(mes_actual)].copy()
+    else:
+        df_mes = df_nps[df_nps['END_DATE_MONTH'] == mes_actual].copy()
+
+    df_prom = df_mes[df_mes['NPS'] == 1].copy()
+
+    motivos_disponibles = df_prom[motivo_col].dropna().unique()
+    motivos_analizar = [m for m in motivos_disponibles if m not in motivos_excluir]
+
+    comentarios_por_motivo = {}
+    for motivo in motivos_analizar:
+        df_motivo = df_prom[df_prom[motivo_col] == motivo].copy()
+        if len(df_motivo) == 0:
+            continue
+
+        comentarios = []
+        for _, row in df_motivo.iterrows():
+            if len(comentarios) >= max_comentarios:
+                break
+            comentario = row.get(comment_col, '')
+            if pd.isna(comentario) or str(comentario).strip() in ('', 'nan', 'None', '.', '..', '-'):
+                continue
+            comentarios.append({
+                'comentario': str(comentario).strip(),
+                'cust_id': str(row.get('CUST_ID', row.get('CUS_CUST_ID', 'N/A'))),
+                'nps': 1,
+            })
+
+        if len(comentarios) >= 1:
+            comentarios_por_motivo[motivo] = {
+                'total_disponibles': len(df_motivo),
+                'muestra_seleccionada': len(comentarios),
+                'comentarios': comentarios
+            }
+
+    return {
+        'metadata': {
+            'mes_actual': mes_actual,
+            'max_comentarios_por_motivo': max_comentarios,
+            'total_motivos_analizados': len(comentarios_por_motivo)
+        },
+        'comentarios_por_motivo': comentarios_por_motivo
+    }
+
+
+def generar_prompt_promotores(datos_preparados: Dict, site: str = 'MLA') -> str:
+    """Genera prompt para análisis de comentarios de promotores."""
+    metadata = datos_preparados['metadata']
+    comentarios_por_motivo = datos_preparados['comentarios_por_motivo']
+    mes_actual = metadata['mes_actual']
+    _mes_label = mes_actual[-1] if isinstance(mes_actual, (list, tuple)) else mes_actual
+
+    if not comentarios_por_motivo:
+        return "No hay comentarios de promotores disponibles."
+
+    prompt = f"""
+# 🌟 ANÁLISIS DE MOTIVOS POSITIVOS - COMENTARIOS DE PROMOTORES NPS Relacional Sellers
+
+## Contexto
+Necesito que analices comentarios de sellers PROMOTORES (NPS 9-10) para identificar qué valoran positivamente de Mercado Pago.
+
+**Mes analizado:** {mes_actual}
+**Motivos a analizar:** {metadata['total_motivos_analizados']}
+
+## Instrucciones
+
+Para cada motivo, debes:
+1. **Leer TODOS los comentarios** del motivo
+2. **Identificar qué valoran los promotores** — no solo "todo bien", sino qué aspectos específicos destacan
+3. **Agrupar por causa raíz positiva** (mínimo 1, máximo 3 causas por motivo)
+4. **Generar título descriptivo** — Qué es lo que el seller valora. Ej: "Rapidez de acreditación permite reinvertir en mercadería el mismo día"
+5. **Generar descripción** (2-4 oraciones) con el patrón identificado y por qué es valioso para el seller
+6. **Calcular frecuencia** de cada causa (% y cantidad absoluta)
+7. **Seleccionar 2-3 ejemplos** representativos
+
+## Formato de salida REQUERIDO
+
+Responde ÚNICAMENTE con un JSON válido:
+
+```json
+{{
+  "metadata": {{
+    "site": "{site}",
+    "mes_actual": "{mes_actual}",
+    "tipo": "promotores"
+  }},
+  "causas_por_motivo": {{
+    "NombreMotivo": {{
+      "total_comentarios_analizados": 60,
+      "causas_raiz": {{
+        "causa_1": {{
+          "titulo": "Titulo descriptivo del valor percibido",
+          "descripcion": "Descripcion de 2-4 oraciones",
+          "frecuencia_pct": 45.5,
+          "frecuencia_abs": 27,
+          "ejemplos": [
+            {{"comentario": "...", "cust_id": "..."}}
+          ]
+        }}
+      }}
+    }}
+  }}
+}}
+```
+
+---
+
+## 📋 COMENTARIOS POR MOTIVO
+
+"""
+
+    for motivo, datos in comentarios_por_motivo.items():
+        total = datos['muestra_seleccionada']
+        comentarios = datos['comentarios']
+
+        prompt += f"\n### 🌟 MOTIVO: {motivo}\n\n"
+        prompt += f"**Total comentarios:** {total}\n\n"
+        prompt += "**Comentarios:**\n\n"
+
+        for i, c in enumerate(comentarios, 1):
+            prompt += f'{i}. "{c["comentario"]}"\n   (Seller: {c["cust_id"]}, NPS: 1)\n\n'
+
+        prompt += "\n" + "=" * 80 + "\n\n"
+
+    output_filename = f'checkpoint5_promotores_{site}_{_mes_label}.json'
+    prompt += f"""
+## 📝 INSTRUCCIONES FINALES
+
+1. **Guardar el archivo** usando Write tool:
+   - **Path:** `data/{output_filename}`
+2. **Confirmar** que se guardó correctamente
+"""
+
+    return prompt
 
 
 def generar_prompt_para_claude(datos_preparados: Dict, site: str = 'MLA') -> str:
@@ -224,8 +399,10 @@ Responde ÚNICAMENTE con un JSON válido:
         
         prompt += "\n" + "="*80 + "\n\n"
     
-    output_filename = f'checkpoint5_causas_raiz_{site}_{mes_actual}.json'
-    
+    # Handle mes_actual being a list (quarter) or single month
+    _mes_label = mes_actual[-1] if isinstance(mes_actual, (list, tuple)) else mes_actual
+    output_filename = f'checkpoint5_causas_raiz_{site}_{_mes_label}.json'
+
     prompt += f"""
 ## 📝 INSTRUCCIONES FINALES
 

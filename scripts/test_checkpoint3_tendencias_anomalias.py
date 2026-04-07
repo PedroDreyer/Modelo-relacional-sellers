@@ -63,8 +63,15 @@ if output_path_check.exists():
         with open(output_path_check, 'r', encoding='utf-8') as f:
             cached_data = json.load(f)
         cached_update = cached_data.get('update_tipo', 'unknown')
+        cached_fecha_corte = cached_data.get('fecha_corte', None)
+        current_fecha_corte = config_data.get('fecha_corte', None)
         if cached_update != update_tipo:
             print(f"\n   ⚠️  Cache INVÁLIDO: update_tipo cambió ({cached_update} → {update_tipo})")
+            print(f"   🗑️  Eliminando cache obsoleto...")
+            output_path_check.unlink(missing_ok=True)
+            cache_valid = False
+        elif cached_fecha_corte != current_fecha_corte:
+            print(f"\n   ⚠️  Cache INVÁLIDO: fecha_corte cambió ({cached_fecha_corte} → {current_fecha_corte})")
             print(f"   🗑️  Eliminando cache obsoleto...")
             output_path_check.unlink(missing_ok=True)
             cache_valid = False
@@ -129,19 +136,40 @@ print("\n\U0001f4e6 Paso 4: Cargando datos de encuestas desde checkpoint0...")
 
 import pandas as pd
 
+datos_enriquecido_path = project_root / 'data' / f'datos_nps_enriquecido_{site}_{mes_actual}.parquet'
 datos_nps_path = project_root / 'data' / f'datos_nps_{site}_{mes_actual}.parquet'
 
-if not datos_nps_path.exists():
-    print(f"   \u274c ERROR: No se encontro {datos_nps_path.name}")
+if datos_enriquecido_path.exists():
+    datos_path = datos_enriquecido_path
+    print(f"   \u2705 Usando datos enriquecidos")
+elif datos_nps_path.exists():
+    datos_path = datos_nps_path
+    print(f"   \u2705 Usando datos base")
+else:
+    print(f"   \u274c ERROR: No se encontro datos NPS para {site}_{mes_actual}")
     print(f"   \U0001f4a1 Ejecuta primero: python scripts/test_checkpoint0_cargar_datos.py")
     sys.exit(1)
 
 try:
-    df_encuestas = pd.read_parquet(datos_nps_path)
-    print(f"   \u2705 Datos cargados desde checkpoint0: {len(df_encuestas):,} registros")
+    df_encuestas = pd.read_parquet(datos_path)
+    print(f"   \u2705 Datos cargados: {len(df_encuestas):,} registros")
 except Exception as e:
-    print(f"   \u274c Error cargando datos desde checkpoint0: {e}")
+    print(f"   \u274c Error cargando datos: {e}")
     sys.exit(1)
+
+# Aplicar fecha_corte si configurada
+fecha_corte = config_data.get('fecha_corte')
+if fecha_corte and 'END_DATE' in df_encuestas.columns:
+    df_encuestas['END_DATE'] = pd.to_datetime(df_encuestas['END_DATE'], utc=True)
+    antes = len(df_encuestas)
+    df_encuestas = df_encuestas[df_encuestas['END_DATE'] <= pd.Timestamp(fecha_corte, tz='UTC')]
+    print(f"   \U0001f4c6 Fecha de corte: {fecha_corte} ({antes - len(df_encuestas):,} registros excluidos)")
+
+# Aplicar filtro de update_tipo
+from nps_model.analysis.updates import filtrar_por_update
+if update_tipo != 'all':
+    df_encuestas = filtrar_por_update(df_encuestas, update_tipo)
+    print(f"   \u2705 Filtro update '{update_tipo}': {len(df_encuestas):,} registros")
 
 # ==========================================
 # PASO 5: Calcular impacto de quejas mensual
@@ -186,6 +214,7 @@ output_data = {
     "site": site,
     "mes_actual": mes_actual,
     "update_tipo": update_tipo,
+    "fecha_corte": config_data.get('fecha_corte', None),
     "meses_analizados": meses_para_analisis,
     "tendencias": tendencias_resultados,
     "anomalias": anomalias_resultados

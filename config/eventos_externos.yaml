@@ -1,0 +1,5 @@
+# Eventos externos que afectan NPS y no son detectables desde los datos de encuesta.
+# El motor de razonamiento los agrega como contexto al final del parrafo.
+# Formato: lista de eventos con quarter, site (o "all"), descripcion e impacto.
+
+eventos: []

@@ -84,14 +84,17 @@ if datos_nps_path.exists() and metadatos_path.exists():
         print(f"   \U0001f5d1\ufe0f  Eliminando cache obsoleto...")
         datos_nps_path.unlink(missing_ok=True)
         metadatos_path.unlink(missing_ok=True)
-        # También eliminar downstream caches
+        # Eliminar ALL downstream caches cuando update_tipo cambia
         enriq_path = data_dir / f'datos_nps_enriquecido_{site}_{mes_actual}.parquet'
         cp1_path = data_dir / f'checkpoint1_consolidado_{site}_{mes_actual}.json'
         cp2_meta_path = data_dir / f'checkpoint2_{site}_{mes_actual}_metadatos.json'
         cp3_path = data_dir / f'checkpoint3_tendencias_anomalias_{site}_{mes_actual}.json'
-        cp5_path_data = data_dir / f'checkpoint5_causas_raiz_{site}_{mes_actual}.json'
-        cp5_path_outputs = project_root / 'outputs' / f'checkpoint5_causas_raiz_{site}_{mes_actual}.json'
-        for p in [enriq_path, cp1_path, cp2_meta_path, cp3_path, cp5_path_data, cp5_path_outputs]:
+        cp4_path = data_dir / f'checkpoint4_alertas_emergentes_{site}_{mes_actual}.json'
+        cp5_path = data_dir / f'checkpoint5_causas_raiz_{site}_{mes_actual}.json'
+        cp5_comments = data_dir / f'checkpoint5_comments_variaciones_{site}_{mes_actual}.json'
+        cp5_retagueo = data_dir / f'checkpoint5_retagueo_{site}_{mes_actual}.json'
+        cp5_q_ant = data_dir / f'checkpoint5_causas_raiz_{site}_{mes_actual}_q_anterior.json'
+        for p in [enriq_path, cp1_path, cp2_meta_path, cp3_path, cp4_path, cp5_path, cp5_comments, cp5_retagueo, cp5_q_ant]:
             p.unlink(missing_ok=True)
 
 print("   No se encontro checkpoint, cargando desde BigQuery...")
